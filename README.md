@@ -19,6 +19,23 @@ Forti Fide captures audio from your environment, transcribes it locally using Wh
 | **Stores** | Sessions saved locally. Nothing transmitted. |
 | **Reflects** | Patterns over time, sovereignty ratio, register map, what has been arriving |
 
+## Installation
+
+Download the latest release for Windows:
+**[Forti Fide v0.1.0 — Windows x64](https://github.com/FluxusSomnii/FortiFide/releases/latest)**
+
+System requirements:
+- Windows 10 or 11
+- NVIDIA GPU recommended (CUDA 12.x for hardware acceleration)
+- 4GB disk space for Whisper model weights
+
+On first launch, Forti Fide downloads the Whisper large-v3 model (~3GB).
+For Live and Deep modes (speaker identification), you will need to accept
+the pyannote licence on Hugging Face — see [docs/setup.md](docs/setup.md)
+for full instructions.
+
+macOS support is in progress.
+
 ## The five registers
 
 Every session is mapped across five rhetorical registers: Fear, Identity, Authority, Intimacy, Rational. The register map shows the emotional character of your information environment — not as a score, not as a judgment, as information.
@@ -53,22 +70,17 @@ All data is stored locally. The only external connection is the Claude API for A
 
 ## Status
 
-Active development. OSS release in preparation.
+Active development. v0.1.0 — first public release.
 
 ## License
 
 GPL v3. The pattern library is open. The detection logic is auditable. No fork may obscure the pattern detection methodology.
 
-## Part of the Fluxus Somnii ecosystem
+[fortifide.org](https://fortifide.org)
 
-Forti Fide is the first instrument in the Fluxus Somnii ecosystem. It sees what the world does to language in your environment.
+## Feedback and contributions
 
-- **Omnisomnii** — sees what you are inside
-- **Hices** — serves what you produce
-- **Fluxus Somnii** — what we become when enough of us see clearly together
+Bug reports and feature requests: [GitHub Issues](https://github.com/FluxusSomnii/FortiFide/issues)
 
-[fortifide.org](https://fortifide.org) · [fluxussomnii.com](https://fluxussomnii.com)
-
----
-
-*The instrument does not coerce. It returns awareness. What the user does with that awareness is entirely and only theirs.*
+Pattern library contributions welcome — see [docs/pattern-library.md](docs/pattern-library.md)
+for the contribution guidelines.
