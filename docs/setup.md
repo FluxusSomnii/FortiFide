@@ -145,6 +145,5 @@ See the full privacy policy at: **fortifide.org/privacy**
 ## Getting help
 
 - Issues and bug reports: **github.com/FluxusSomnii/FortiFide/issues**
-- Community forum: **fortifide.org/community**
 - Documentation: **fortifide.org/docs**
 
