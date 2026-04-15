@@ -41,11 +41,6 @@ Forti Fide does not decide what you should believe or consume. It does not filte
 ## The glass box
 
 Every pattern Forti Fide can detect is readable inside the app before any session begins. The detection logic is in the repository. The pattern library is open and community-governed. No single entity controls what gets flagged or how. The instrument cannot be tuned to serve undisclosed interests. That constraint is structural, not instructional.
-
-## Part of the Fluxus Somnii ecosystem
-
-Forti Fide sees what the world does to you. Omnisomnii sees what you are inside. Hices serves what you produce. Fluxus Somnii sees what we become when enough of us see clearly together.
-
 ---
 
 *The instrument does not coerce. It returns awareness. What the user does with that awareness is entirely and only theirs.*
