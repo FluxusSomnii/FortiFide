@@ -26,10 +26,6 @@ New patterns require:
 
 The pyannote diarization model requires users to accept the licence on Hugging Face themselves. It cannot be bundled in the distribution. README installation instructions must document this explicitly.
 
-## Contributor rewards
-
-Meaningful contributions are eligible for rewards from the transparent donation pool. The contribution record is public.
-
 ## Code of conduct
 
 The instrument exists to return awareness. Keep that as the north star.

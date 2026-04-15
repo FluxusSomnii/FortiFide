@@ -26,28 +26,12 @@ The session archive search and pattern library features are not yet built. Curre
 
 **Not needed for:** The Data tab charts (Recharts handles those), the live annotation pipeline (SQLite is sufficient), or existing session storage.
 
-**RAM note:** Typesense stores full index in RAM. Forti Fide already runs Whisper and pyannote as background processes. Combined RAM pressure across all three instruments when running simultaneously needs measurement before shipping.
+**RAM note:** Typesense stores full index in RAM. Forti Fide already runs Whisper and pyannote as background processes. Combined RAM pressure across all three components (Whisper, pyannote, Typesense) when running simultaneously needs measurement before shipping.
 
 **Connected decisions:**
 - Data tab rebuild (pending) — Recharts not Typesense
 - Session archive feature (not yet scoped) — Typesense is the right tool when this is built
 - Pattern library (community governance phase) — Typesense for contributor search UX
-
----
-
-## HELD — AAAK Compression Format
-
-Investigate MemPalace's AAAK lossless compression format before building any AI context management features in Forti Fide.
-
-**Context:** Forti Fide's session archive accumulates annotation data, transcripts, and pattern records over time. When AI-assisted features are added (pattern library search, session analysis, report generation), context management will determine what the model receives and at what cost. AAAK is a lossless compression format developed in the MemPalace project that may compress this context more efficiently than general-purpose approaches.
-
-**Why HELD:** No AI context management features are currently in build scope. The session archive and pattern library features that would require context management are not yet scoped. Investigating AAAK before those features are designed would be premature.
-
-**Trigger to resolve:** When AI context management for session archive or pattern library features is being designed. Evaluate AAAK alongside standard compression approaches at that point.
-
-**Connected decisions:**
-- Session archive feature (not yet scoped) — primary context management use case
-- Hices AAAK entry (HELD) — cross-ecosystem: all instruments evaluate this before building context management
 
 ---
 
@@ -68,9 +52,8 @@ Investigate AirLLM as the inference framework for Forti Fide's Deep mode when op
 
 **Trigger to resolve:** When Deep mode local fallback is being scoped for implementation. Benchmark AirLLM against the required model size and target hardware at that point.
 
-**RAM note:** AirLLM trades RAM for latency. Combined RAM pressure from Whisper, pyannote, and an AirLLM model needs measurement before shipping. The HELD entry in Hices for AirLLM carries the same RAM concern — shared constraint across both instruments when running simultaneously.
+**RAM note:** AirLLM trades RAM for latency. Combined RAM pressure from Whisper, pyannote, and an AirLLM model needs measurement before shipping.
 
 **Connected decisions:**
 - Deep mode pipeline (existing) — the feature this would augment
-- Hices AirLLM entry (HELD) — cross-ecosystem: both instruments evaluate AirLLM before local inference build begins
-- RAM pressure across instruments — Typesense, Whisper, pyannote, and AirLLM cannot all be active simultaneously without measurement
+- RAM pressure across components — Typesense, Whisper, pyannote, and AirLLM cannot all be active simultaneously without measurement

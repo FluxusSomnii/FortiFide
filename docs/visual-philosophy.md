@@ -21,7 +21,6 @@ Transparency is not a theme applied decoratively. It is the actual design princi
 | Surface | #13131e |
 | Text | #e4e2dc — warm off-white |
 | Accent | #AFA9EC — purple, used sparingly |
-| Teal | #5DCAA5 — ecosystem accent, footer only |
 | Border | rgba(255,255,255,0.07) |
 
 ## Confidence colour temperature

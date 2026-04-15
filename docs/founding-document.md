@@ -4,7 +4,7 @@
 
 ## What it is
 
-Forti Fide is the external instrument of the Fluxus Somnii ecosystem. It makes visible what the information environment does to language in your presence — the rhetorical structure of what arrives at you through audio, annotated in real time, returned to you as self-knowledge.
+Forti Fide is an instrument for rhetorical awareness. It makes visible what the information environment does to language in your presence — the rhetorical structure of what arrives at you through audio, annotated in real time, returned to you as self-knowledge.
 
 It captures. It annotates. It stores locally. It reflects patterns over time. It does nothing else.
 
