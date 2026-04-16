@@ -29,3 +29,8 @@ Forti Fide processes all data locally on your device and does not collect, trans
 ## The Claude API
 
 The AI Analysis feature sends transcript text to the Claude API (Anthropic). This only occurs when you explicitly press the Analyse button. It does not occur automatically. Anthropic's privacy policy governs what happens to data sent to the API. If you prefer, configure a local model in Settings — when a local model is configured, no data leaves your device for any reason.
+
+## Contact
+
+For privacy-related questions or data subject requests:
+info@fluxussomnii.com
