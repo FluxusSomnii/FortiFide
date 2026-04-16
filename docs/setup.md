@@ -9,10 +9,16 @@
 | Requirement | Version | Notes |
 |-------------|---------|-------|
 | Windows | 10 or 11 | macOS support in progress |
-| NVIDIA GPU | Any CUDA-capable card | CPU fallback available but slow |
-| CUDA | 12.x | For GPU-accelerated transcription |
+| NVIDIA GPU | Any CUDA-capable card | Optional — CPU mode available but slower |
+| CUDA | 12.x | Optional — required for GPU acceleration only |
 | RAM | 8GB minimum | 16GB recommended for Deep mode |
 | Disk space | 4GB free | For Whisper model weights |
+
+> **Which build do I download?** The standard Forti Fide installer runs
+> Whisper transcription on the CPU — it works on any Windows machine with
+> no NVIDIA drivers required. A separate GPU-accelerated build is available
+> for machines with an NVIDIA card and CUDA 12.x installed. If unsure,
+> start with the standard build.
 
 ---
 
@@ -53,7 +59,7 @@ Launch Forti Fide. On first launch it will:
 
 1. Download Whisper large-v3 model weights (~3GB) — this takes a few minutes
 2. Download pyannote models if your Hugging Face token is configured
-3. Detect your GPU and configure CUDA acceleration automatically
+3. Run Whisper on the CPU (standard build) or activate CUDA (GPU build)
 
 The download happens once. Subsequent launches are immediate.
 
@@ -105,9 +111,26 @@ Start with **Capture** to verify everything is working.
 
 ## Troubleshooting
 
-**"CUDA not available" — transcription is slow**
-Verify your GPU drivers are up to date. Check that CUDA 12.x is installed:
-`nvidia-smi` in a terminal should show your GPU and CUDA version.
+**"cublas64_13.dll was not found" error on launch**
+This means CUDA is not installed on the machine and you are trying to run
+the GPU build. Two options:
+
+1. Install the CUDA Toolkit for GPU acceleration:
+   **developer.nvidia.com/cuda-downloads**
+   Select Windows → x86_64 → your Windows version → exe (local).
+   After installing, relaunch Forti Fide.
+2. Download the standard (CPU) build instead. It runs on any Windows
+   machine without CUDA, and shows a dismissible "Running in CPU mode"
+   banner at the top of the window.
+
+If you see this error and the app still launches, you are already running
+in CPU mode and can safely dismiss the banner.
+
+**Transcription is slow on the standard build**
+The standard build runs Whisper on the CPU. For faster transcription on
+large sessions, download the GPU-accelerated build (requires NVIDIA GPU
+with CUDA 12.x installed). Run `nvidia-smi` in a terminal to confirm
+your GPU and driver version.
 
 **Whisper download stuck**
 Check your internet connection. The model is hosted on Hugging Face.
