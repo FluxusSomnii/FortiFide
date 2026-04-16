@@ -1,0 +1,36 @@
+{
+  "name": "@fluxussomnii/fortifide",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@fides/contracts": "workspace:*",
+    "@fides/pattern-library": "workspace:*",
+    "@fides/feedback": "workspace:*",
+    "@anthropic-ai/sdk": "^0.39.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "zustand": "^5.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/api": "^2.1.1",
+    "@tauri-apps/cli": "^2",
+    "@tauri-apps/plugin-shell": "^2.2.0",
+    "@types/node": "^25.5.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.19.0",
+    "concurrently": "^9.1.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "sidecar": "npx tsx sidecar/rhetorical-server.ts",
+    "diarize": "node sidecar/start_diarize.cjs",
+    "build:sidecar": "node sidecar/build-sidecar.mjs",
+    "tauri:dev": "concurrently -k -n vite,sidecar,diarize,tauri -c green,blue,cyan,yellow \"vite --port 5174 --strictPort\" \"npx tsx sidecar/rhetorical-server.ts\" \"node sidecar/start_diarize.cjs\" \"npx tauri dev\"",
+    "tauri:build": "pnpm build:sidecar && npx tauri build"
+  }
+}

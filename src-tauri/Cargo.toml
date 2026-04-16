@@ -1,0 +1,36 @@
+[package]
+name = "fortifide"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "fortifide_lib"
+crate-type = ["lib", "cdylib", "staticlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["sync", "time", "macros"] }
+uuid = { version = "1", features = ["v4"] }
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+whisper-rs = { version = "0.16", features = ["cuda"] }
+cpal = "0.15"
+base64 = "0.22"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.61", features = [
+  "Win32_UI_Accessibility",
+  "Win32_System_Com",
+  "Win32_Foundation",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Media_Audio",
+  "Win32_Devices_FunctionDiscovery",
+] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+core-foundation = "0.10"

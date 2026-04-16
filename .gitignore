@@ -1,0 +1,35 @@
+# Build artifacts
+src-tauri/target/
+node_modules/
+dist/
+build/
+.vite/
+
+# Sidecar build
+sidecar/.sea-build/
+sidecar/node_modules/
+src-tauri/binaries/
+
+# Environment and secrets
+.env
+.env.local
+.env.*.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Editor
+.vscode/
+.idea/
+
+# pnpm
+.pnpm-store/
+
+# TypeScript build cache
+*.tsbuildinfo
+
+# Personal data (never ship)
+*.fides
+sessions/
+recordings/
