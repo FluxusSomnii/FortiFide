@@ -11,7 +11,7 @@
 | Windows | 10 or 11 | macOS support in progress |
 | NVIDIA GPU | Any CUDA-capable card | Optional — CPU mode available but slower |
 | CUDA | 12.x | Optional — required for GPU acceleration only |
-| Python | 3.11 specifically | Required for Speakers and Deep modes. Python 3.12+ not yet supported. Not needed for Capture mode. |
+| Python | Any 3.8+ with pyannote.audio installed | Required for Speakers and Deep modes. Not needed for Transcribe mode. |
 | RAM | 8GB minimum | 16GB recommended for Deep mode |
 | Disk space | 4GB free | For Whisper model weights |
 
@@ -49,12 +49,10 @@ pyannote requires you to accept its licence directly on Hugging Face.
 
 In Forti Fide: open **Settings → Hugging Face Token** and paste your token.
 
-> **Note:** Without this step, Capture mode (Whisper only) still works fully.
-> Live and Deep modes require the pyannote licence.
->
-> **Note:** Python 3.11 is required specifically. Python 3.12 and newer are
-> not yet compatible with the diarization library. See the manual
-> diarization setup section below for the one-time v0.1.0 setup steps.
+> **Note:** Without this step, Transcribe mode (Whisper only) still works
+> fully. Live and Deep modes require both the pyannote licence and
+> `pyannote.audio` installed in a Python interpreter on your machine. See
+> the manual diarization setup section below for the one-time v0.1.0 steps.
 
 ---
 
@@ -106,11 +104,11 @@ For your own speech only: **Mic**.
 
 | Mode | What it does | When to use |
 |------|-------------|-------------|
-| **Capture** | Transcription + pattern detection | Quick sessions, low resource usage |
-| **Live** | + Speaker identification | When knowing who said what matters |
+| **Transcribe** | Transcription + pattern detection | Quick sessions, low resource usage |
+| **Speakers** | + Speaker identification | When knowing who said what matters |
 | **Deep** | + AI speaker attribution every 60s | Long sessions, complex conversations |
 
-Start with **Capture** to verify everything is working.
+Start with **Transcribe** to verify everything is working.
 
 ---
 
@@ -146,17 +144,17 @@ Verify your Hugging Face token has read access and that you accepted
 both licence agreements (speaker-diarization-3.1 and segmentation-3.0).
 
 **Speakers mode is unavailable or crashes**
-Speakers and Deep modes require Python 3.11 specifically.
+Speakers and Deep modes require `pyannote.audio` to be importable from a
+Python interpreter on your machine. If you see the "Speakers mode
+unavailable" modal, install it by running in a terminal:
 
-Check your version:
 ```
-python --version
+pip install pyannote.audio
 ```
 
-If you have 3.12 or newer, install 3.11 alongside it:
-**python.org/downloads/release/python-3119**
-Check "Add Python to PATH" during installation.
-Restart Forti Fide after installing.
+Then restart Forti Fide. The app will try Python interpreters in this
+order: `py -3.11`, `python3.11`, `python`, `python3` — the first one
+that can import `pyannote.audio` is used.
 
 In the current release (v0.1.0), the diarization server must be running
 before Forti Fide can use Speakers or Deep mode. See **Manual diarization
@@ -167,8 +165,9 @@ Check Windows audio permissions: Settings → Privacy → Microphone.
 Forti Fide needs microphone access enabled.
 
 **Pattern detection not showing**
-Ensure Auto-Analyse is enabled in the toolbar. Patterns appear after
-a few seconds of transcription — the model needs context to detect patterns.
+Pattern detection runs automatically as the transcript arrives — there
+is no toggle. Patterns appear after a few seconds of speech; the model
+needs some context before it can detect anything.
 
 ---
 
@@ -192,12 +191,16 @@ See the full privacy policy at: **fortifide.org/privacy**
 Speakers and Deep modes use pyannote for speaker identification. In v0.1.0
 this requires a one-time manual setup:
 
-1. Install Python 3.11: **python.org/downloads/release/python-3119**
-   Check "Add Python to PATH" during installation.
+1. Make sure you have Python (any 3.8 or later) on your machine. If you
+   don't, install from **python.org/downloads**. Check "Add Python to
+   PATH" during installation on Windows.
 2. Open a terminal and run:
    ```
-   py -3.11 -m pip install pyannote.audio
+   pip install pyannote.audio
    ```
+   If you have multiple Python versions, use the interpreter you want
+   Forti Fide to use (e.g. `py -3.11 -m pip install pyannote.audio` on
+   Windows to target 3.11 specifically).
 3. Accept the pyannote licence on Hugging Face (see Step 2 above).
 4. Configure your Hugging Face token in Forti Fide Settings.
 5. The diarization service starts automatically when you launch Forti Fide —
