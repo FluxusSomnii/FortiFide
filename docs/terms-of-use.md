@@ -25,7 +25,3 @@ Donations are voluntary and non-refundable. A donation does not create any entit
 ## Contact
 
 info@fluxussomnii.com
-
----
-
-*Draft for attorney review before publication.*
