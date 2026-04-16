@@ -24,7 +24,7 @@ Donations are voluntary and non-refundable. A donation does not create any entit
 
 ## Contact
 
-legal@fortifide.org
+info@fluxussomnii.com
 
 ---
 
