@@ -1,6 +1,7 @@
-import { useCallback, useState, useRef } from "react";
+import { useCallback, useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "../stores/session-store";
+import { PythonVersionModal, type PythonStatus } from "./PythonVersionModal";
 
 type CaptureMode = "capture" | "live" | "deep";
 type AudioSource = "microphone" | "loopback" | "both";
@@ -71,9 +72,24 @@ export function TopBar({ sidebarOpen, onExpandSidebar }: { sidebarOpen: boolean;
   const isCapturing = useSessionStore((s) => s.isAudioCapturing);
   const captureMode = useSessionStore((s) => s.captureMode);
   const settings = useSessionStore((s) => s.settings);
-  const autoAnalyse = useSessionStore((s) => s.autoAnalyse);
 
   const audioSource = settings.audioSource ?? "loopback";
+
+  // Python-version gate — Speakers (live) and Deep modes require Python 3.11.
+  // Probe once on mount and cache; the Rust side also caches so repeated
+  // invocations across the session cost nothing.
+  const [pythonStatus, setPythonStatus] = useState<PythonStatus | null>(null);
+  const [pythonModal, setPythonModal] = useState<PythonStatus | null>(null);
+  useEffect(() => {
+    invoke<PythonStatus>("get_python_status")
+      .then(setPythonStatus)
+      .catch((err) => {
+        // If the command itself fails (shouldn't on a correctly built app),
+        // stay optimistic — don't block the user.
+        console.error("[TOPBAR] get_python_status failed:", err);
+        setPythonStatus({ status: "ok", version: null });
+      });
+  }, []);
 
   // Tooltip state
   const [tip, setTip] = useState<{ text: string; x: number; y: number } | null>(null);
@@ -117,6 +133,13 @@ export function TopBar({ sidebarOpen, onExpandSidebar }: { sidebarOpen: boolean;
 
   const handleModeChange = useCallback(async (mode: CaptureMode) => {
     const store = useSessionStore.getState();
+    // Gate: Speakers/Deep require Python 3.11. If the probe came back with
+    // anything other than "ok" (or isn't back yet and the user is fast), block
+    // the switch and surface the modal. The mode pill stays on the old value.
+    if ((mode === "live" || mode === "deep") && pythonStatus && pythonStatus.status !== "ok") {
+      setPythonModal(pythonStatus);
+      return;
+    }
     store.setCaptureMode(mode);
     store.updateSetting("captureMode", mode);
     if (store.isAudioCapturing) {
@@ -131,7 +154,7 @@ export function TopBar({ sidebarOpen, onExpandSidebar }: { sidebarOpen: boolean;
         store.setAudioError(err instanceof Error ? err.message : String(err));
       }
     }
-  }, []);
+  }, [pythonStatus]);
 
   const handleSourceChange = useCallback(async (source: AudioSource) => {
     const store = useSessionStore.getState();
@@ -155,9 +178,6 @@ export function TopBar({ sidebarOpen, onExpandSidebar }: { sidebarOpen: boolean;
     if (!preset) return;
     store.setCaptureMode(preset.captureMode);
     store.updateSetting("captureMode", preset.captureMode);
-    store.setAutoAnalyse(preset.autoAnalyse);
-    store.updateSetting("autoAnalyse", preset.autoAnalyse);
-    store.updateSetting("autoAnalyseIntervalMinutes", preset.autoAnalyseIntervalMinutes);
     store.updateSetting("chunkSizeSeconds", preset.chunkSizeSeconds);
     store.updateSetting("confidenceFloor", preset.confidenceFloor);
     store.updateSetting("audioSource", preset.audioSource);
@@ -221,20 +241,6 @@ export function TopBar({ sidebarOpen, onExpandSidebar }: { sidebarOpen: boolean;
 
       <div style={{ flex: 1 }} />
 
-      {/* Auto-Analyse */}
-      <label style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}
-        onMouseEnter={(e) => showTip(e, "Automatically analyse transcript at set intervals")}
-        onMouseLeave={hideTip}
-      >
-        <input type="checkbox" checked={autoAnalyse}
-          onChange={(e) => useSessionStore.getState().setAutoAnalyse(e.target.checked)}
-          style={{ accentColor: "#6366f1" }}
-        />
-        <span style={{ fontSize: 10, color: "#666", letterSpacing: "0.05em" }}>Auto-Analyse</span>
-      </label>
-
-      {divider}
-
       {/* Reset */}
       <button onClick={handleReset}
         onMouseEnter={(e) => showTip(e, "Clear current session data")}
@@ -257,6 +263,18 @@ export function TopBar({ sidebarOpen, onExpandSidebar }: { sidebarOpen: boolean;
         if (flipX) { s.right = window.innerWidth - tip.x + pad; } else { s.left = tip.x + pad; }
         return <div style={s}>{tip.text}</div>;
       })()}
+
+      {pythonModal && (
+        <PythonVersionModal
+          pythonStatus={pythonModal}
+          onUseCapture={() => {
+            const store = useSessionStore.getState();
+            store.setCaptureMode("capture");
+            store.updateSetting("captureMode", "capture");
+          }}
+          onClose={() => setPythonModal(null)}
+        />
+      )}
     </div>
   );
 }

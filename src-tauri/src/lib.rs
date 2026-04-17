@@ -1,4 +1,5 @@
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
@@ -9,7 +10,143 @@ use tauri_plugin_shell::ShellExt;
 mod audio;
 mod bridge;
 mod capture;
+mod diagnostics;
 mod tray;
+
+/// Result of probing the host for a Python that can run the diarization
+/// sidecar. The only thing that matters is whether `pyannote.audio` is
+/// importable — version numbers are not a reliable gate (pyannote runs on
+/// a range of Python versions that varies by install).
+#[derive(serde::Serialize, Clone, Debug)]
+#[serde(rename_all = "snake_case")]
+enum PythonStatusCode {
+    /// A Python with pyannote.audio was found.
+    Ok,
+    /// No Python on this machine can import pyannote.audio.
+    NotFound,
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+struct PythonStatus {
+    /// "ok" | "not_found"
+    status: PythonStatusCode,
+    /// Version string of the Python that imported pyannote successfully, for
+    /// display only ("3.14.2" etc.). None if no compatible interpreter was
+    /// found at all.
+    version: Option<String>,
+}
+
+/// Candidates probed in preference order. Mirrors `start_diarize.cjs` so dev
+/// and the UI give consistent answers.
+const PY_CANDIDATES: &[(&str, &[&str])] = &[
+    ("py", &["-3.11"]),
+    ("python3.11", &[]),
+    ("python", &[]),
+    ("python3", &[]),
+];
+
+fn build_command(cmd: &str, args: &[&str]) -> std::process::Command {
+    let mut command = std::process::Command::new(cmd);
+    command.args(args);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    command
+}
+
+/// Run `<cmd> <args> --version` and return the version string from the banner
+/// ("3.14.2" etc.) on success, or None if the invocation fails. Used for the
+/// display-only `version` field — does not gate anything.
+fn probe_version(cmd: &str, args: &[&str]) -> Option<String> {
+    let mut command = build_command(cmd, args);
+    command.arg("--version");
+    let child = command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+        .ok()?;
+    let output = wait_with_timeout(child, Duration::from_secs(3))?;
+    if !output.status.success() {
+        return None;
+    }
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let start = combined.find("Python ")?;
+    let rest = &combined[start + 7..];
+    Some(rest.split(|c: char| c.is_whitespace()).next()?.to_string())
+}
+
+/// Returns true iff the given interpreter can `import pyannote.audio` and
+/// print the sentinel to stdout. Any failure mode (interpreter missing,
+/// import error, timeout) returns false. Import timeout is generous because
+/// pyannote's first import is slow (downloads torch backends, etc.).
+fn can_import_pyannote(cmd: &str, args: &[&str]) -> bool {
+    let mut command = build_command(cmd, args);
+    command.arg("-c").arg("import pyannote.audio; print(\"ok\")");
+    let child = match command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let output = match wait_with_timeout(child, Duration::from_secs(15)) {
+        Some(o) => o,
+        None => return false,
+    };
+    if !output.status.success() {
+        return false;
+    }
+    // pyannote writes deprecation warnings to stderr; the "ok" sentinel
+    // only lands in stdout if the import actually succeeded.
+    String::from_utf8_lossy(&output.stdout).contains("ok")
+}
+
+/// Wait up to `timeout` for `child` to exit, killing it if it doesn't.
+fn wait_with_timeout(
+    mut child: std::process::Child,
+    timeout: Duration,
+) -> Option<std::process::Output> {
+    let start = std::time::Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_)) => return child.wait_with_output().ok(),
+            Ok(None) => {
+                if start.elapsed() >= timeout {
+                    let _ = child.kill();
+                    return None;
+                }
+                std::thread::sleep(Duration::from_millis(50));
+            }
+            Err(_) => return None,
+        }
+    }
+}
+
+/// Walk the candidate list and return Ok with the first interpreter that can
+/// import pyannote. Returns NotFound only if every candidate either doesn't
+/// exist or lacks pyannote.
+fn detect_python_status() -> PythonStatus {
+    for (cmd, args) in PY_CANDIDATES {
+        let Some(version) = probe_version(cmd, args) else { continue };
+        if can_import_pyannote(cmd, args) {
+            return PythonStatus {
+                status: PythonStatusCode::Ok,
+                version: Some(version),
+            };
+        }
+    }
+    PythonStatus {
+        status: PythonStatusCode::NotFound,
+        version: None,
+    }
+}
 
 struct SidecarState {
     child: Arc<Mutex<Option<tauri_plugin_shell::process::CommandChild>>>,
@@ -30,9 +167,13 @@ fn show_window(app: &tauri::AppHandle) {
     }
 }
 
-/// Stop capture, kill the sidecar, and exit the app.
+/// Stop capture, kill the sidecar, remove crash sentinel, and exit the app.
 /// Shared by the tray "Quit" menu item and the main window close event.
 fn shutdown(app: &tauri::AppHandle) {
+    // Remove crash sentinel FIRST — if anything below panics, the sentinel
+    // would incorrectly signal a crash on next launch.
+    diagnostics::remove_sentinel();
+    diagnostics::log_println("[DIAG] Clean shutdown");
     {
         let state = app.state::<CaptureState>();
         let mut mgr = state.manager.lock().unwrap();
@@ -144,6 +285,137 @@ fn retranscribe_session(
     audio::retranscribe::retranscribe(transcriber, session_dir, &audio_session_id, mode)
 }
 
+/// Return Python detection result. Called by the frontend before allowing
+/// Speakers/Deep mode to start. Cached after first probe — the user would
+/// have to relaunch the app to change their Python install anyway, so a
+/// stale reading isn't possible in practice.
+#[tauri::command]
+fn get_python_status(state: tauri::State<PythonCache>) -> PythonStatus {
+    let mut slot = state.inner.lock().unwrap();
+    if let Some(cached) = slot.as_ref() {
+        return cached.clone();
+    }
+    let fresh = detect_python_status();
+    *slot = Some(fresh.clone());
+    fresh
+}
+
+struct PythonCache {
+    inner: Mutex<Option<PythonStatus>>,
+}
+
+/// Runtime CUDA / NVIDIA-GPU availability plus the compile-time build
+/// variant this binary was produced with. The banner in the UI uses both:
+///   · GPU build + nvidia-smi ok → no banner (happy path)
+///   · GPU build + nvidia-smi fail → banner with "install CUDA or use CPU build"
+///   · CPU build → no banner regardless (the user chose CPU)
+#[derive(serde::Serialize, Clone, Debug)]
+struct CudaStatus {
+    /// "gpu" when this binary was built with the `gpu` feature, else "cpu".
+    build_variant: &'static str,
+    /// Whether nvidia-smi was runnable and returned a GPU. Only meaningful
+    /// on the GPU build — on the CPU build this is always false and the UI
+    /// should ignore it.
+    cuda_available: bool,
+}
+
+#[cfg(feature = "gpu")]
+const BUILD_VARIANT: &str = "gpu";
+#[cfg(not(feature = "gpu"))]
+const BUILD_VARIANT: &str = "cpu";
+
+/// Try to run `<exe> --query-gpu=name --format=csv,noheader` with a 3s
+/// timeout. Returns true iff it runs successfully and prints a non-empty
+/// GPU name. Used as the inner loop of `probe_nvidia_smi` so we can try
+/// several candidate paths for nvidia-smi on Windows.
+fn try_nvidia_smi(exe: &str) -> bool {
+    let mut command = std::process::Command::new(exe);
+    command.args(["--query-gpu=name", "--format=csv,noheader"]);
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    }
+    let child = match command
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn()
+    {
+        Ok(c) => c,
+        Err(_) => return false,
+    };
+    let output = match wait_with_timeout(child, Duration::from_secs(3)) {
+        Some(o) => o,
+        None => return false,
+    };
+    if !output.status.success() {
+        return false;
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    stdout.lines().any(|l| !l.trim().is_empty())
+}
+
+/// Probe for an NVIDIA GPU by running nvidia-smi. On Windows we first try
+/// the bare name (resolved via PATH) and fall back to the canonical
+/// System32 location — on some constrained shells System32 isn't on the
+/// child's PATH even though the binary lives there on every modern
+/// NVIDIA-driver install.
+fn probe_nvidia_smi() -> bool {
+    if try_nvidia_smi("nvidia-smi") {
+        return true;
+    }
+    #[cfg(target_os = "windows")]
+    {
+        if try_nvidia_smi(r"C:\Windows\System32\nvidia-smi.exe") {
+            return true;
+        }
+    }
+    false
+}
+
+#[tauri::command]
+fn get_cuda_status(state: tauri::State<CudaCache>) -> CudaStatus {
+    let mut slot = state.inner.lock().unwrap();
+    if let Some(cached) = slot.as_ref() {
+        return cached.clone();
+    }
+    let cuda_available = if BUILD_VARIANT == "gpu" {
+        probe_nvidia_smi()
+    } else {
+        false
+    };
+    let fresh = CudaStatus { build_variant: BUILD_VARIANT, cuda_available };
+    *slot = Some(fresh.clone());
+    fresh
+}
+
+struct CudaCache {
+    inner: Mutex<Option<CudaStatus>>,
+}
+
+/// Check if the previous session crashed. Called by the frontend on mount
+/// to decide whether to show the crash-recovery dialog.
+#[tauri::command]
+fn check_crash_recovery(state: tauri::State<CrashState>) -> CrashRecoveryStatus {
+    let crashed = *state.crashed_last_session.lock().unwrap();
+    CrashRecoveryStatus { crashed }
+}
+
+/// Package logs + system info into a zip on the Desktop. Returns the path.
+#[tauri::command]
+fn save_diagnostic_report() -> Result<String, String> {
+    diagnostics::package_diagnostic_report()
+}
+
+#[derive(serde::Serialize, Clone, Debug)]
+struct CrashRecoveryStatus {
+    crashed: bool,
+}
+
+struct CrashState {
+    crashed_last_session: Mutex<bool>,
+}
+
 #[tauri::command]
 fn list_audio_input_devices() -> Vec<String> {
     use cpal::traits::{HostTrait, DeviceTrait};
@@ -172,6 +444,9 @@ pub fn run() {
         .manage(AudioState {
             manager: Arc::new(Mutex::new(audio::AudioManager::new())),
         })
+        .manage(PythonCache { inner: Mutex::new(None) })
+        .manage(CudaCache { inner: Mutex::new(None) })
+        .manage(CrashState { crashed_last_session: Mutex::new(false) })
         .invoke_handler(tauri::generate_handler![
             get_capture_status,
             get_open_windows,
@@ -183,8 +458,24 @@ pub fn run() {
             get_audio_capture_status,
             list_audio_input_devices,
             retranscribe_session,
+            get_python_status,
+            get_cuda_status,
+            check_crash_recovery,
+            save_diagnostic_report,
         ])
         .setup(|app| {
+            // ── Diagnostics bootstrap ──
+            // 1. Init file logger + panic hook (must be first so all subsequent
+            //    println!/eprintln! land in the log).
+            diagnostics::init();
+            // 2. Check if previous session crashed (sentinel file).
+            let crashed = diagnostics::check_and_clear_crash();
+            *app.state::<CrashState>().crashed_last_session.lock().unwrap() = crashed;
+            if crashed {
+                diagnostics::log_println("[DIAG] Previous session did not exit cleanly — crash recovery dialog will appear");
+            }
+            // 3. Write sentinel for THIS session (removed on clean shutdown).
+            diagnostics::write_sentinel();
             // Spawn the bundled sidecar binary (declared as externalBin in tauri.conf.json).
             // In production the binary is shipped alongside the app; in dev the tsx-based
             // sidecar started by `pnpm tauri:dev` is already listening on 19533, so a spawn
