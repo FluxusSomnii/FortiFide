@@ -15,23 +15,24 @@ Forti Fide captures audio from your environment, transcribes it locally using Wh
 | Function | Description |
 |----------|-------------|
 | **Captures** | Audio from your microphone or system, transcribed locally by Whisper large-v3 |
-| **Annotates** | 60+ rhetorical patterns detected and marked in real time |
+| **Annotates** | 28 rhetorical patterns detected and marked in real time |
 | **Stores** | Sessions saved locally. Nothing transmitted. |
 | **Reflects** | Patterns over time, sovereignty ratio, register map, what has been arriving |
 
 ## Installation
 
 Download the latest release for Windows:
-**[Forti Fide v0.1.0 — Windows x64](https://github.com/FluxusSomnii/FortiFide/releases/latest)**
+**[Forti Fide v0.1.1 — Windows x64 (GPU)](https://github.com/FluxusSomnii/FortiFide/releases/latest)**
 
 System requirements:
 - Windows 10 or 11
-- NVIDIA GPU recommended (CUDA 12.x for hardware acceleration)
+- NVIDIA GPU with CUDA 12.x (the built-in guided setup will help you install CUDA 12 if it is missing)
 - 4GB disk space for Whisper model weights
 
 On first launch, Forti Fide downloads the Whisper large-v3 model (~3GB).
-For Live and Deep modes (speaker identification), you will need to accept
-the pyannote licence on Hugging Face — see [docs/setup.md](docs/setup.md)
+For Speakers and Deep modes (speaker identification), the guided setup
+walks you through Python 3.11, `pyannote.audio`, the pyannote licence on
+Hugging Face, and your Hugging Face token — see [docs/setup.md](docs/setup.md)
 for full instructions.
 
 macOS support is in progress.
@@ -60,9 +61,9 @@ The pattern library is open. The detection logic is auditable. The instrument ca
 
 | Mode | Description |
 |------|-------------|
-| **Capture** | Manual session recording |
-| **Live** | Real-time transcription with live annotation |
-| **Deep** | Extended session with full diarization |
+| **Transcribe** | Whisper transcription + pattern detection |
+| **Speakers** | + Speaker identification (pyannote) |
+| **Deep** | + AI speaker attribution (Claude API, opt-in) |
 
 ## Privacy
 
@@ -70,7 +71,7 @@ All data is stored locally. The only external connection is the Claude API for A
 
 ## Status
 
-Active development. v0.1.0 — first public release.
+Active development. v0.1.1 — Guided Setup (Section 22).
 
 ## License
 
