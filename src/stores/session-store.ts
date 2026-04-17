@@ -36,6 +36,11 @@ interface SessionState {
   currentSessionId: string | null;
   capturedText: CapturedSegment[];
   detections: DetectionInstance[];
+  /** IDs of detections that arrived on the most recent analysis tick and
+   *  haven't yet finished their fade-in animation. Frontend-only — never
+   *  persisted to disk. Cleared by a single setTimeout after the longest
+   *  staggered animation completes. */
+  newDetectionIds: string[];
   error: string | null;
 
   // Clip analysis state
@@ -67,8 +72,9 @@ interface SessionState {
   deepAnalyzing: boolean;
   deepTimerSeconds: number;
 
-  // Auto-analyse tracking
-  lastAutoAnalyseAt: number;
+  // Auto-analyse tracking. No cooldown — detection fires every time new text
+  // arrives (per-paragraph). `lastAutoAnalysedLength` only prevents redundant
+  // re-analysis of unchanged text, not timed gating.
   autoAnalyseRunning: boolean;
   lastAutoAnalysedLength: number;
   setLastAutoAnalysedLength: (n: number) => void;
@@ -89,7 +95,7 @@ interface SessionState {
   setError: (error: string | null) => void;
   clearSession: () => void;
   analyzeClip: (text: string) => Promise<void>;
-  analyzeLive: (text: string) => Promise<void>;
+  analyzeLive: (text: string, mode?: "replace" | "merge") => Promise<void>;
   resetClip: () => void;
   loadSavedSession: (sessionId: string) => Promise<void>;
   getClipWindow: (windowMs: number) => string;
@@ -124,11 +130,35 @@ interface SessionState {
   loadCheckIns: () => Promise<void>;
 }
 
+/**
+ * Clear `newDetectionIds` after the longest staggered fade-in animation has
+ * completed. Uses reference equality on the array we just scheduled so that
+ * an overlapping analyzeLive call can't prematurely clear a newer batch —
+ * if the value has changed, the timeout is a no-op.
+ *
+ * Timing math: first animation starts at t=0 with a 300ms fade; each
+ * subsequent annotation starts 50ms later; add 200ms of slack for safety.
+ */
+function scheduleClearNewIds(
+  set: (partial: Partial<SessionState>) => void,
+  get: () => SessionState,
+  scheduledIds: string[],
+): void {
+  if (scheduledIds.length === 0) return;
+  const totalMs = scheduledIds.length * 50 + 300 + 200;
+  setTimeout(() => {
+    if (get().newDetectionIds === scheduledIds) {
+      set({ newDetectionIds: [] });
+    }
+  }, totalMs);
+}
+
 export const useSessionStore = create<SessionState>((set, get) => ({
   captureStatus: "idle",
   currentSessionId: null,
   capturedText: [],
   detections: [],
+  newDetectionIds: [],
   error: null,
 
   clipText: null,
@@ -146,12 +176,14 @@ export const useSessionStore = create<SessionState>((set, get) => ({
   settingsLoaded: false,
 
   captureMode: "live",
-  autoAnalyse: false,
+  // Pattern detection is always on — no longer a user preference.
+  // Kept in the store as a runtime flag for components that still read it,
+  // but never persisted to disk and never flipped off from the UI.
+  autoAnalyse: true,
   deepBuffer: [],
   deepAccumulationStart: null,
   deepAnalyzing: false,
   deepTimerSeconds: 0,
-  lastAutoAnalyseAt: 0,
   autoAnalyseRunning: false,
   lastAutoAnalysedLength: 0,
   setLastAutoAnalysedLength: (n) => set({ lastAutoAnalysedLength: n }),
@@ -222,6 +254,7 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       currentSessionId: null,
       capturedText: [],
       detections: [],
+      newDetectionIds: [],
       error: null,
       audioSessionId: null,
       lastAutoAnalysedLength: 0,
@@ -241,27 +274,68 @@ export const useSessionStore = create<SessionState>((set, get) => ({
       clipAnalyzing: true,
       clipError: null,
       detections: [],
+      newDetectionIds: [],
       currentSessionId: sessionId,
     });
 
     try {
       const detections = await api.analyze(text, sessionId);
-      set({ detections, clipAnalyzing: false });
+      const newIds = detections.map((d) => d.id);
+      set({ detections, newDetectionIds: newIds, clipAnalyzing: false });
+      scheduleClearNewIds(set, get, newIds);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Analysis failed";
       set({ clipError: message, clipAnalyzing: false });
     }
   },
 
-  // Non-destructive analysis: runs detection on current live text without creating a new session
-  analyzeLive: async (text: string) => {
+  // Analysis on the current live text.
+  //
+  //   mode = "replace" — overwrite the existing detections. Use when the user
+  //     explicitly clicks Analyse / Re-analyse: they asked for a fresh result.
+  //   mode = "merge" — union new detections with existing ones, deduped by
+  //     (patternId, phrasePosition). Use for the auto-analyse timer tick so
+  //     previously-surfaced annotations don't flicker out when the probabilistic
+  //     backend returns a slightly smaller set on the next call. Preserves the
+  //     UX promise: annotations appear and stay during a live session.
+  //
+  // Default is "replace" for backward compatibility with existing call sites.
+  //
+  // After state update, the ids of genuinely new detections (absent from the
+  // previous set) are recorded in `newDetectionIds` so the renderer can fade
+  // them in one by one instead of flashing all at once.
+  analyzeLive: async (text: string, mode: "replace" | "merge" = "replace") => {
     if (!text.trim()) return;
+    const prevIds = new Set(get().detections.map((d) => d.id));
     set({ clipAnalyzing: true, clipError: null });
     try {
       const sessionId = get().currentSessionId ?? `live-${Date.now()}`;
       const detections = await api.analyze(text, sessionId);
-      // Replace detections (fresh analysis of the full text)
-      set({ detections, clipAnalyzing: false });
+      let finalSet: DetectionInstance[];
+      if (mode === "merge") {
+        const existing = get().detections;
+        const seen = new Set<string>();
+        const merged: DetectionInstance[] = [];
+        // Existing first so their ids/timestamps take precedence on duplicates.
+        for (const d of existing) {
+          const key = `${d.patternId}@${d.phrasePosition.start}:${d.phrasePosition.end}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          merged.push(d);
+        }
+        for (const d of detections) {
+          const key = `${d.patternId}@${d.phrasePosition.start}:${d.phrasePosition.end}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          merged.push(d);
+        }
+        finalSet = merged;
+      } else {
+        finalSet = detections;
+      }
+      const newIds = finalSet.filter((d) => !prevIds.has(d.id)).map((d) => d.id);
+      set({ detections: finalSet, newDetectionIds: newIds, clipAnalyzing: false });
+      scheduleClearNewIds(set, get, newIds);
     } catch (err) {
       const message = err instanceof Error ? err.message : "Analysis failed";
       set({ clipError: message, clipAnalyzing: false });

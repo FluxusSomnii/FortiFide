@@ -29,3 +29,32 @@ body {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.15; }
 }
+
+/* Pattern-detection "thinking" indicator — used as a purple dot with a
+   breathing halo while analyzeLive is in flight. Reads as active work
+   without being alarming. */
+@keyframes fidesPulse {
+  0%, 100% {
+    opacity: 0.45;
+    transform: scale(0.8);
+    box-shadow: 0 0 0 0 rgba(175, 169, 236, 0.0);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+    box-shadow: 0 0 10px 2px rgba(175, 169, 236, 0.6);
+  }
+}
+
+/* Matching faint text pulse for the "thinking" label next to the dot. */
+@keyframes fidesTextPulse {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
+}
+
+/* New-annotation fade-in — runs once per newly-arrived detection, staggered
+   50ms apart so patterns resolve in sequence rather than all at once. */
+@keyframes fidesFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}

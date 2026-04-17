@@ -87,6 +87,10 @@ function fmtTime(s: number): string {
 
 export function SessionDetail({ sessionId, onBack, onNavigateToPattern }: { sessionId: string; onBack: () => void; onNavigateToPattern?: ((patternId: string) => void) | undefined }) {
   const [session, setSession] = useState<SavedSession | null>(null);
+  // Re-analyse is blocked while any recording is active — even if the user is
+  // viewing an unrelated past session — because analyzeLive mutates the shared
+  // live-session detections store. We'd rather refuse than corrupt state.
+  const isRecording = useSessionStore((s) => s.isAudioCapturing);
   const [editing, setEditing] = useState(false);
   const [editSegments, setEditSegments] = useState<Segment[]>([]);
   const [speakerMap, setSpeakerMap] = useState<Record<string, string>>({});
@@ -324,6 +328,10 @@ export function SessionDetail({ sessionId, onBack, onNavigateToPattern }: { sess
 
   const handleReprocess = useCallback(async () => {
     if (!session) return;
+    if (isRecording) {
+      setReprocessError("Stop the recording before re-analysing");
+      return;
+    }
     setReprocessing(true);
     setReprocessError(null);
     setReprocessStatus(null);
@@ -403,12 +411,12 @@ export function SessionDetail({ sessionId, onBack, onNavigateToPattern }: { sess
         setReprocessStatus(null);
       }
     } catch (err) {
-      setReprocessError(err instanceof Error ? err.message : "Reprocess failed");
+      setReprocessError(err instanceof Error ? err.message : "Re-analyse failed");
     } finally {
       setReprocessing(false);
       setReprocessStatus(null);
     }
-  }, [session, sessionId, segments, reprocessMode, retranscribeMode, cleanupWithAI]);
+  }, [session, sessionId, segments, reprocessMode, retranscribeMode, cleanupWithAI, isRecording]);
 
   const handleApplyReprocess = useCallback(async () => {
     if (!session || !retranscribePreview) return;
@@ -543,14 +551,23 @@ export function SessionDetail({ sessionId, onBack, onNavigateToPattern }: { sess
               </button>
             )}
             {!editing && (
-              <button onClick={() => setShowReprocess(!showReprocess)} style={{
-                background: showReprocess ? "#181828" : "transparent",
-                border: "1px solid #1e1e24", borderRadius: 5,
-                color: showReprocess ? "#8888cc" : "#444",
-                fontSize: 10, padding: "5px 12px", cursor: "pointer", fontFamily: "inherit",
-                display: "flex", alignItems: "center", gap: 4,
-              }}>
-                Reprocess <span style={{ fontSize: 8, color: "#555" }}>▾</span>
+              <button
+                onClick={() => { if (!isRecording) setShowReprocess(!showReprocess); }}
+                disabled={isRecording}
+                title={isRecording
+                  ? "Stop the recording before re-analysing"
+                  : "Re-run pattern detection on this session's transcript"}
+                style={{
+                  background: showReprocess ? "#181828" : "transparent",
+                  border: "1px solid #1e1e24", borderRadius: 5,
+                  color: isRecording ? "#333" : showReprocess ? "#8888cc" : "#444",
+                  fontSize: 10, padding: "5px 12px",
+                  cursor: isRecording ? "not-allowed" : "pointer",
+                  fontFamily: "inherit",
+                  opacity: isRecording ? 0.5 : 1,
+                  display: "flex", alignItems: "center", gap: 4,
+                }}>
+                Re-analyse <span style={{ fontSize: 8, color: "#555" }}>▾</span>
               </button>
             )}
             {session.checkIns && session.checkIns.length > 0 && !editing && (
@@ -621,7 +638,7 @@ export function SessionDetail({ sessionId, onBack, onNavigateToPattern }: { sess
           <div style={{ fontSize: 11, color: "#888", fontWeight: 600, marginBottom: 8 }}>what to refresh</div>
           <div style={{ display: "flex", gap: 4, marginBottom: 14 }}>
             {(["patterns", "transcript", "full"] as const).map((m) => {
-              const labels: Record<typeof m, string> = { patterns: "PATTERNS ONLY", transcript: "TRANSCRIPT ONLY", full: "FULL REPROCESS" };
+              const labels: Record<typeof m, string> = { patterns: "PATTERNS ONLY", transcript: "TRANSCRIPT ONLY", full: "FULL RE-ANALYSE" };
               const disabled = m !== "patterns" && !hasAnyAudio;
               return (
                 <button

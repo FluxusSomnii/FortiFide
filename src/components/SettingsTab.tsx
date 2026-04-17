@@ -433,8 +433,6 @@ function SavePresetForm({
       name: name.trim(),
       isDefault: false,
       captureMode: settings.captureMode ?? "live",
-      autoAnalyse: settings.autoAnalyse ?? false,
-      autoAnalyseIntervalMinutes: settings.autoAnalyseIntervalMinutes ?? 5,
       chunkSizeSeconds: settings.chunkSizeSeconds ?? 5,
       confidenceFloor: settings.confidenceFloor ?? 0.4,
       audioSource: settings.audioSource ?? "loopback",
@@ -619,34 +617,7 @@ export function SettingsTab() {
 
       {/* ─── Section 2: Analysis ─── */}
       <Section title="Analysis" defaultOpen={false}>
-        {/* Auto-Analyse */}
-        <div style={fieldStyle}>
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <span style={labelStyle}>Auto-Analyse</span>
-            <Toggle
-              checked={settings.autoAnalyse}
-              onChange={(v) => updateSetting("autoAnalyse", v)}
-            />
-          </div>
-          {settings.autoAnalyse && (
-            <div style={{ marginTop: 8 }}>
-              <span style={{ ...labelStyle, fontSize: 11 }}>Interval</span>
-              <StopSlider
-                options={[
-                  { value: 1, label: "1 min" },
-                  { value: 2, label: "2 min" },
-                  { value: 5, label: "5 min" },
-                  { value: 10, label: "10 min" },
-                ]}
-                value={settings.autoAnalyseIntervalMinutes}
-                onChange={(v) => updateSetting("autoAnalyseIntervalMinutes", v)}
-              />
-              <div style={{ ...hintStyle, color: "#a86" }}>
-                Auto-analysis uses tokens continuously. Set a daily budget below.
-              </div>
-            </div>
-          )}
-        </div>
+        {/* Pattern detection is always on — no longer a user setting. */}
 
         {/* Context Window */}
         <div style={fieldStyle}>
@@ -1014,7 +985,7 @@ export function SettingsTab() {
             <div>
               <span style={{ color: "#d0d0d0", fontSize: 13 }}>{preset.name}</span>
               <span style={{ color: "#555", fontSize: 11, marginLeft: 8 }}>
-                {preset.captureMode} · {preset.autoAnalyse ? "auto" : "manual"}
+                {preset.captureMode}
               </span>
             </div>
             {!preset.isDefault && (

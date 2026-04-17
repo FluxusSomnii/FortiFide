@@ -45,8 +45,6 @@ interface FidesSettings {
   audioSource: "microphone" | "loopback" | "both";
   noiseThreshold: number;
   transcriptionLanguage: string;
-  autoAnalyse: boolean;
-  autoAnalyseIntervalMinutes: number;
   contextWindowMinutes: 1 | 2 | 5 | 10;
   confidenceFloor: number;
   enabledCategories: string[];
@@ -71,8 +69,6 @@ interface FidesSettings {
     name: string;
     isDefault: boolean;
     captureMode: "capture" | "live" | "deep";
-    autoAnalyse: boolean;
-    autoAnalyseIntervalMinutes: number;
     chunkSizeSeconds: 3 | 5 | 10 | 15;
     confidenceFloor: number;
     audioSource: "microphone" | "loopback" | "both";
@@ -94,8 +90,6 @@ async function loadAllSettings(): Promise<FidesSettings> {
       audioSource: "loopback",
       noiseThreshold: 0.1,
       transcriptionLanguage: "auto",
-      autoAnalyse: false,
-      autoAnalyseIntervalMinutes: 5,
       contextWindowMinutes: 2,
       confidenceFloor: 0.4,
       enabledCategories: [
@@ -119,10 +113,10 @@ async function loadAllSettings(): Promise<FidesSettings> {
       diarizationMaxSpeakers: 5,
       captureMode: "live",
       presets: [
-        { id: "interview", name: "Interview", isDefault: true, captureMode: "deep", autoAnalyse: true, autoAnalyseIntervalMinutes: 2, chunkSizeSeconds: 5, confidenceFloor: 0.4, audioSource: "both", dedupSensitivity: "balanced" },
-        { id: "meeting", name: "Meeting", isDefault: true, captureMode: "live", autoAnalyse: false, autoAnalyseIntervalMinutes: 5, chunkSizeSeconds: 5, confidenceFloor: 0.5, audioSource: "loopback", dedupSensitivity: "strict" },
-        { id: "lecture", name: "Lecture", isDefault: true, captureMode: "capture", autoAnalyse: false, autoAnalyseIntervalMinutes: 5, chunkSizeSeconds: 10, confidenceFloor: 0.6, audioSource: "loopback", dedupSensitivity: "strict" },
-        { id: "quick-capture", name: "Quick Capture", isDefault: true, captureMode: "capture", autoAnalyse: false, autoAnalyseIntervalMinutes: 5, chunkSizeSeconds: 3, confidenceFloor: 0.4, audioSource: "loopback", dedupSensitivity: "none" },
+        { id: "interview", name: "Interview", isDefault: true, captureMode: "deep", chunkSizeSeconds: 5, confidenceFloor: 0.4, audioSource: "both", dedupSensitivity: "balanced" },
+        { id: "meeting", name: "Meeting", isDefault: true, captureMode: "live", chunkSizeSeconds: 5, confidenceFloor: 0.5, audioSource: "loopback", dedupSensitivity: "strict" },
+        { id: "lecture", name: "Lecture", isDefault: true, captureMode: "capture", chunkSizeSeconds: 10, confidenceFloor: 0.6, audioSource: "loopback", dedupSensitivity: "strict" },
+        { id: "quick-capture", name: "Quick Capture", isDefault: true, captureMode: "capture", chunkSizeSeconds: 3, confidenceFloor: 0.4, audioSource: "loopback", dedupSensitivity: "none" },
       ],
     };
   }

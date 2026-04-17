@@ -18,7 +18,11 @@ function speakerColor(speaker: string): string {
 const TIER_COLORS: Record<string, string> = { possible: "#c4a24e", likely: "#d4822e", strong: "#c44e4e" };
 function tierColor(tier: string): string { return TIER_COLORS[tier] ?? "#888"; }
 
-function renderAnnotated(text: string, dets: DetectionInstance[]): React.ReactNode[] {
+function renderAnnotated(
+  text: string,
+  dets: DetectionInstance[],
+  newIds: Set<string>,
+): React.ReactNode[] {
   const sorted = [...dets].sort((a, b) => a.phrasePosition.start - b.phrasePosition.start);
   // Resolve overlaps — keep higher confidence
   const resolved: DetectionInstance[] = [];
@@ -30,11 +34,25 @@ function renderAnnotated(text: string, dets: DetectionInstance[]): React.ReactNo
   }
   const els: React.ReactNode[] = [];
   let cursor = 0;
+  // Counter so detections that are in the "new" set get a staggered
+  // animation delay based on their position in document order among other
+  // new detections. Existing (already-seen) annotations render immediately.
+  let newRank = 0;
   for (const d of resolved) {
     const { start, end } = d.phrasePosition;
     if (start > text.length || end > text.length) continue;
     if (cursor < start) els.push(<span key={`t-${cursor}`}>{text.slice(cursor, start)}</span>);
-    els.push(<AnnotationMark key={`d-${d.id}`} detection={d} text={text.slice(start, end)} />);
+    const isNew = newIds.has(d.id);
+    els.push(
+      <AnnotationMark
+        key={`d-${d.id}`}
+        detection={d}
+        text={text.slice(start, end)}
+        isNew={isNew}
+        staggerIndex={isNew ? newRank : 0}
+      />,
+    );
+    if (isNew) newRank += 1;
     cursor = end;
   }
   if (cursor < text.length) els.push(<span key={`t-${cursor}`}>{text.slice(cursor)}</span>);
@@ -121,7 +139,16 @@ export function CaptureView({ onCheckInOpen }: { onCheckInOpen?: () => void }) {
   const segments = useSessionStore((s) => s.capturedText);
   const isCapturing = useSessionStore((s) => s.isAudioCapturing);
   const detections = useSessionStore((s) => s.detections);
+  const newDetectionIds = useSessionStore((s) => s.newDetectionIds);
+  const newDetectionIdSet = useMemo(
+    () => new Set(newDetectionIds),
+    [newDetectionIds],
+  );
   const clipAnalyzing = useSessionStore((s) => s.clipAnalyzing);
+  // Chars-analysed-so-far, so paragraphs can dim themselves until their
+  // text has been through the pattern detector. Monotonic — only moves
+  // forward as each analyze tick completes.
+  const lastAutoAnalysedLength = useSessionStore((s) => s.lastAutoAnalysedLength);
   const captureMode = useSessionStore((s) => s.captureMode);
   const deepAnalyzing = useSessionStore((s) => s.deepAnalyzing);
   const deepTimerSeconds = useSessionStore((s) => s.deepTimerSeconds);
@@ -176,23 +203,19 @@ export function CaptureView({ onCheckInOpen }: { onCheckInOpen?: () => void }) {
 
   const paragraphs = useMemo(() => mergeSegments(segments), [segments]);
 
-  // Auto-analyse — triggers when a new paragraph is completed
-  const autoAnalyse = useSessionStore((s) => s.autoAnalyse);
-  const paragraphCount = paragraphs.length;
-  const prevParagraphCount = useRef(0);
+  // Pattern detection — always on while recording. Debounced on segment
+  // arrival (Whisper emits a ~5s chunk each time): every new segment resets
+  // a 2-second timer, and analysis fires once the user stops producing new
+  // audio for 2 seconds. Previously this was gated on paragraph-count
+  // increases, which skipped continuous-speech sessions where all text
+  // accumulates into a single paragraph (no speaker change + no 30s gap).
+  //
+  // `lastAutoAnalysedLength` still guards against analysing identical text
+  // twice in a row (cheap idempotency).
+  const segmentCount = segments.length;
   useEffect(() => {
-    // Track paragraph count changes only when auto-analyse is active
-    if (!autoAnalyse || !isCapturing) {
-      prevParagraphCount.current = paragraphCount;
-      return;
-    }
-
-    // A new paragraph was completed (count increased)
-    if (paragraphCount <= prevParagraphCount.current) {
-      prevParagraphCount.current = paragraphCount;
-      return;
-    }
-    prevParagraphCount.current = paragraphCount;
+    if (!isCapturing) return;
+    if (segmentCount === 0) return;
 
     const timer = setTimeout(() => {
       const store = useSessionStore.getState();
@@ -205,10 +228,10 @@ export function CaptureView({ onCheckInOpen }: { onCheckInOpen?: () => void }) {
       if (text.trim().length === 0) return;
 
       useSessionStore.setState({ autoAnalyseRunning: true });
-      store.analyzeLive(text).then(() => {
+      // Merge so accumulated annotations don't flicker between auto-ticks.
+      store.analyzeLive(text, "merge").then(() => {
         useSessionStore.setState({
           autoAnalyseRunning: false,
-          lastAutoAnalyseAt: Date.now(),
           lastAutoAnalysedLength: textLen,
         });
       }).catch(() => {
@@ -216,7 +239,7 @@ export function CaptureView({ onCheckInOpen }: { onCheckInOpen?: () => void }) {
       });
     }, 2000);
     return () => clearTimeout(timer);
-  }, [autoAnalyse, isCapturing, paragraphCount]);
+  }, [isCapturing, segmentCount]);
 
   const handleDownload = useCallback(async () => {
     setIsDownloading(true);
@@ -233,14 +256,15 @@ export function CaptureView({ onCheckInOpen }: { onCheckInOpen?: () => void }) {
   const modelReady = modelStatus?.downloaded === true;
   const hasText = segments.length > 0;
 
-  const handleClipAnalyse = () => {
-    const text = segments.map((s) => s.text).join(" ");
-    if (text.trim()) useSessionStore.getState().analyzeLive(text);
-  };
-
   const hasAnyAudio = !!useSessionStore((s) => s.audioSessionId);
 
   const handleReprocess = useCallback(async (mode: "patterns" | "transcript" | "full") => {
+    // Defensive: the button is hidden during recording, but refuse here too
+    // in case the handler is ever called through a stale menu state.
+    if (useSessionStore.getState().isAudioCapturing) {
+      setReprocessError("Stop the recording before re-analysing");
+      return;
+    }
     setShowReprocessMenu(false);
     setReprocessing(true);
     setReprocessError(null);
@@ -251,7 +275,8 @@ export function CaptureView({ onCheckInOpen }: { onCheckInOpen?: () => void }) {
       if (mode === "patterns") {
         setReprocessStatus("Detecting patterns...");
         const text = segments.map((s) => s.text).join(" ");
-        if (text.trim()) await store.analyzeLive(text);
+        // User-initiated → replace to give them a fresh clean set.
+        if (text.trim()) await store.analyzeLive(text, "replace");
       } else {
         // Retranscribe audio
         const audioSessionId = store.audioSessionId;
@@ -289,7 +314,7 @@ export function CaptureView({ onCheckInOpen }: { onCheckInOpen?: () => void }) {
         }
       }
     } catch (err) {
-      setReprocessError(err instanceof Error ? err.message : "Reprocess failed");
+      setReprocessError(err instanceof Error ? err.message : "Re-analyse failed");
     } finally {
       setReprocessing(false);
       setReprocessStatus(null);
@@ -386,16 +411,9 @@ export function CaptureView({ onCheckInOpen }: { onCheckInOpen?: () => void }) {
 
   if (isDownloading && modelDownloadProgress) return <ModelDownloadBar progress={modelDownloadProgress} />;
 
-  if (!hasText && !isCapturing) {
-    return (
-      <div style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 100 }}>
-        <div style={{ fontSize: 36, opacity: 0.3, color: "#222" }}>◎</div>
-        <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.14em", color: "#333", marginTop: 12 }}>
-          Select a mode and press Start
-        </div>
-      </div>
-    );
-  }
+  // Pre-session placeholder (no transcript yet, not recording) is now handled
+  // inline inside the transcript area so the bottom action bar — which hosts
+  // the Auto-analyse checkbox — remains visible in every state.
 
   return (
     <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
@@ -419,12 +437,26 @@ export function CaptureView({ onCheckInOpen }: { onCheckInOpen?: () => void }) {
         {isCapturing && !hasText && (
           <div style={{ color: "#333", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em" }}>Listening...</div>
         )}
+        {!isCapturing && !hasText && (
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", paddingTop: 80 }}>
+            <div style={{ fontSize: 36, opacity: 0.3, color: "#222" }}>◎</div>
+            <div style={{ fontSize: 11, textTransform: "uppercase", letterSpacing: "0.14em", color: "#333", marginTop: 12 }}>
+              Select a mode and press Start
+            </div>
+          </div>
+        )}
         {paragraphs.map((para, i) => {
           // Compute paragraph's char offset in the full joined text for detection matching
           const fullText = paragraphs.map(p => p.text).join(" ");
           let charOffset = 0;
           for (let j = 0; j < i; j++) charOffset += paragraphs[j]!.text.length + 1;
           const paraEnd = charOffset + para.text.length;
+
+          // Has this paragraph been through the pattern detector yet?
+          // Uses the same char-length cutoff the auto-analyse timer writes on
+          // success. The two measures (segment-length-sum vs paragraph-offsets)
+          // differ by a few chars but the visual is coarse enough to forgive it.
+          const isAnalysed = paraEnd <= lastAutoAnalysedLength;
 
           // Filter detections overlapping this paragraph and adjust positions
           const paraDetections = detections
@@ -457,9 +489,21 @@ export function CaptureView({ onCheckInOpen }: { onCheckInOpen?: () => void }) {
                   <span>Overlap — {para.overlapSpeakers?.join(" & ") ?? "multiple speakers"}</span>
                 </div>
               )}
-              {/* Annotated text */}
-              <div style={{ fontSize: 14, lineHeight: 1.8, color: "#a8a6a0", whiteSpace: "pre-wrap" }}>
-                {paraDetections.length > 0 ? renderAnnotated(para.text, paraDetections) : para.text}
+              {/* Annotated text. Colour depends on whether the paragraph has
+                  been through the pattern detector yet: dimmer while pending,
+                  full warm-grey once analysed. Transition covers the flip so
+                  the brightening is a visible moment rather than a snap. */}
+              <div
+                style={{
+                  fontSize: 14,
+                  lineHeight: 1.8,
+                  color: isAnalysed ? "#a8a6a0" : "#55544f",
+                  whiteSpace: "pre-wrap",
+                  transition: "color 500ms ease-out",
+                }}
+                title={isAnalysed ? undefined : "Not yet analysed — waiting for pattern detection"}
+              >
+                {paraDetections.length > 0 ? renderAnnotated(para.text, paraDetections, newDetectionIdSet) : para.text}
               </div>
               {/* Pattern tags row */}
               {paraDetections.length > 0 && (
@@ -486,24 +530,21 @@ export function CaptureView({ onCheckInOpen }: { onCheckInOpen?: () => void }) {
         })}
       </div>
 
-      {/* Bottom action bar */}
-      {hasText && (
-        <div style={{
-          borderTop: "1px solid #141416", padding: "18px 32px",
-          display: "flex", alignItems: "center", justifyContent: "space-between",
-        }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 8, position: "relative" }}>
-            {detections.length === 0 ? (
-              <button onClick={handleClipAnalyse} disabled={clipAnalyzing || segments.length === 0} style={{
-                background: "transparent", border: "1px solid #1e1e24", borderRadius: 5,
-                color: clipAnalyzing ? "#555" : "#888", fontSize: 11, padding: "6px 14px",
-                cursor: clipAnalyzing ? "wait" : "pointer", fontFamily: "inherit",
-                opacity: clipAnalyzing ? 0.6 : 1,
-              }}>{clipAnalyzing ? "Analysing..." : "Analyse"}</button>
-            ) : (
+      {/* Bottom action bar. Pattern detection is always on during recording
+          (no toggle, no Analyse-now button — annotations appear as the
+          transcript arrives). Re-analyse + Save / State only surface once a
+          transcript exists; bar hidden entirely pre-session. */}
+      {(isCapturing || hasText) && (
+      <div style={{
+        borderTop: "1px solid #141416", padding: "18px 32px",
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14, position: "relative" }}>
+            {!isCapturing && hasText && (
               <button
                 onClick={() => setShowReprocessMenu((p) => !p)}
                 disabled={reprocessing || clipAnalyzing}
+                title="Re-run pattern detection on this transcript"
                 style={{
                   background: showReprocessMenu ? "#181828" : "transparent",
                   border: "1px solid #1e1e24", borderRadius: 5,
@@ -514,11 +555,11 @@ export function CaptureView({ onCheckInOpen }: { onCheckInOpen?: () => void }) {
                   display: "flex", alignItems: "center", gap: 4,
                 }}
               >
-                {reprocessing ? (reprocessStatus ?? "Reprocessing...") : "Reprocess"} <span style={{ fontSize: 8, color: "#555" }}>▴</span>
+                {reprocessing ? (reprocessStatus ?? "Re-analysing...") : "Re-analyse"} <span style={{ fontSize: 8, color: "#555" }}>▴</span>
               </button>
             )}
-            {/* Reprocess dropdown menu (pops upward) */}
-            {showReprocessMenu && (
+            {/* Re-analyse dropdown menu (pops upward). Only shown when stopped and there's text. */}
+            {!isCapturing && hasText && showReprocessMenu && (
               <div style={{
                 position: "absolute", bottom: "100%", left: 0, marginBottom: 4,
                 background: "#0c0c14", border: "1px solid #1a1a2e", borderRadius: 6,
@@ -546,34 +587,76 @@ export function CaptureView({ onCheckInOpen }: { onCheckInOpen?: () => void }) {
                   cursor: hasAnyAudio ? "pointer" : "not-allowed", fontFamily: "inherit",
                   opacity: hasAnyAudio ? 1 : 0.4,
                 }}>
-                  <div style={{ color: hasAnyAudio ? "#aaa" : "#333", marginBottom: 2 }}>FULL REPROCESS</div>
+                  <div style={{ color: hasAnyAudio ? "#aaa" : "#333", marginBottom: 2 }}>FULL RE-ANALYSE</div>
                   <div style={{ fontSize: 9, color: "#444" }}>retranscribe + detect patterns</div>
                 </button>
               </div>
             )}
             {reprocessError && <span style={{ color: "#c44e4e", fontSize: 10 }}>{reprocessError}</span>}
+            {clipAnalyzing && (
+              /* "Thinking" indicator while analyzeLive is in flight. Sits
+                  where the pattern-count label lives otherwise, so the two
+                  never compete for the same slot. Dot + halo + label so the
+                  state is visible even if the eye is on the transcript. */
+              <span
+                aria-label="Detecting patterns"
+                role="status"
+                style={{
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: 10,
+                  flexShrink: 0,
+                }}
+              >
+                <span
+                  style={{
+                    display: "inline-block",
+                    width: 10, height: 10,
+                    borderRadius: "50%",
+                    background: "#AFA9EC",
+                    animation: "fidesPulse 1.2s ease-in-out infinite",
+                    flexShrink: 0,
+                  }}
+                />
+                <span
+                  style={{
+                    fontSize: 10,
+                    color: "#AFA9EC",
+                    letterSpacing: "0.08em",
+                    textTransform: "uppercase",
+                    animation: "fidesTextPulse 1.2s ease-in-out infinite",
+                  }}
+                >
+                  thinking
+                </span>
+              </span>
+            )}
             {detections.length > 0 && !clipAnalyzing && !reprocessing && (
               <span style={{ fontSize: 10, color: "#555" }}>
                 {detections.length} pattern{detections.length !== 1 ? "s" : ""} highlighted
               </span>
             )}
-          </div>
-          <span style={{ fontSize: 9, color: "#333", fontFamily: "monospace" }}>
-            audio:{useSessionStore.getState().audioSessionId ?? "null"}
-          </span>
-          <div style={{ display: "flex", gap: 6 }}>
-            <button onClick={handleSaveSession} style={{
-              background: "transparent", border: "1px solid #1e2a1e", borderRadius: 5,
-              color: "#3a5a3a", fontSize: 11, padding: "6px 14px", cursor: "pointer", fontFamily: "inherit",
-            }}>Save Session</button>
-            {onCheckInOpen && (
-              <button onClick={onCheckInOpen} style={{
-                background: "transparent", border: "1px solid #1e1e2a", borderRadius: 5,
-                color: "#3a3a5a", fontSize: 11, padding: "6px 14px", cursor: "pointer", fontFamily: "inherit",
-              }}>State</button>
-            )}
-          </div>
         </div>
+        {hasText && (
+          <>
+            <span style={{ fontSize: 9, color: "#333", fontFamily: "monospace" }}>
+              audio:{useSessionStore.getState().audioSessionId ?? "null"}
+            </span>
+            <div style={{ display: "flex", gap: 6 }}>
+              <button onClick={handleSaveSession} style={{
+                background: "transparent", border: "1px solid #1e2a1e", borderRadius: 5,
+                color: "#3a5a3a", fontSize: 11, padding: "6px 14px", cursor: "pointer", fontFamily: "inherit",
+              }}>Save Session</button>
+              {onCheckInOpen && (
+                <button onClick={onCheckInOpen} style={{
+                  background: "transparent", border: "1px solid #1e1e2a", borderRadius: 5,
+                  color: "#3a3a5a", fontSize: 11, padding: "6px 14px", cursor: "pointer", fontFamily: "inherit",
+                }}>State</button>
+              )}
+            </div>
+          </>
+        )}
+      </div>
       )}
     </div>
   );

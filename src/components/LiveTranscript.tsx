@@ -743,19 +743,16 @@ export function LiveTranscript() {
       const textLen = store.capturedText.reduce((a, s) => a + s.text.length, 0);
       if (textLen <= store.lastAutoAnalysedLength) return;
 
-      // Respect configured cooldown interval (default 5 min)
-      const cooldownMs = (store.settings.autoAnalyseIntervalMinutes ?? 5) * 60_000;
-      if (store.lastAutoAnalyseAt > 0 && Date.now() - store.lastAutoAnalyseAt < cooldownMs) return;
-
       const text = store.capturedText.map((s) => s.text).join(" ");
       if (text.trim().length === 0) return;
 
-      // Fire-and-forget — transcript rendering is never blocked
+      // Fire-and-forget — transcript rendering is never blocked.
+      // Merge mode so annotations accumulate instead of flickering when the
+      // backend returns a slightly smaller set on the next tick.
       useSessionStore.setState({ autoAnalyseRunning: true });
-      store.analyzeLive(text).then(() => {
+      store.analyzeLive(text, "merge").then(() => {
         useSessionStore.setState({
           autoAnalyseRunning: false,
-          lastAutoAnalyseAt: Date.now(),
           lastAutoAnalysedLength: textLen,
         });
       }).catch(() => {
@@ -788,10 +785,7 @@ export function LiveTranscript() {
     if (!preset) return;
     const store = useSessionStore.getState();
     store.setCaptureMode(preset.captureMode);
-    store.setAutoAnalyse(preset.autoAnalyse);
     updateSetting("captureMode", preset.captureMode);
-    updateSetting("autoAnalyse", preset.autoAnalyse);
-    updateSetting("autoAnalyseIntervalMinutes", preset.autoAnalyseIntervalMinutes);
     updateSetting("chunkSizeSeconds", preset.chunkSizeSeconds);
     updateSetting("confidenceFloor", preset.confidenceFloor);
     updateSetting("audioSource", preset.audioSource);
@@ -1036,14 +1030,21 @@ export function LiveTranscript() {
         </div>
 
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          {/* Auto-Analyse checkbox */}
+          {/* Auto-Analyse checkbox — tooltip explains per state */}
           <label
             style={{ display: "flex", alignItems: "center", gap: 4, cursor: "pointer" }}
-            onMouseEnter={(e) => showTip(e, "Automatically detect rhetorical patterns in each paragraph as it arrives.")}
+            onMouseEnter={(e) =>
+              showTip(
+                e,
+                autoAnalyse
+                  ? "Automatically detect rhetorical patterns as the transcript arrives"
+                  : "Pattern detection is paused. Press Analyse when done to annotate the transcript.",
+              )
+            }
             onMouseLeave={hideTip}
           >
-            <input type="checkbox" checked={autoAnalyse} onChange={(e) => { useSessionStore.getState().setAutoAnalyse(e.target.checked); updateSetting("autoAnalyse", e.target.checked); }} style={{ accentColor: "#666" }} />
-            <span style={{ color: "#888", fontSize: 11 }}>Auto-Analyse</span>
+            <input type="checkbox" checked={autoAnalyse} onChange={(e) => { useSessionStore.getState().setAutoAnalyse(e.target.checked); }} style={{ accentColor: "#666" }} />
+            <span style={{ color: "#888", fontSize: 11 }}>Auto-analyse</span>
           </label>
 
           {/* Clip & Analyse */}

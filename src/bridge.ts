@@ -75,9 +75,7 @@ export interface FidesSettings {
   noiseThreshold: number;
   transcriptionLanguage: string;
 
-  // Analysis
-  autoAnalyse: boolean;
-  autoAnalyseIntervalMinutes: number;
+  // Analysis. Pattern detection is always on — no longer a user setting.
   contextWindowMinutes: 1 | 2 | 5 | 10;
   confidenceFloor: number;
   enabledCategories: string[];
@@ -132,8 +130,6 @@ export interface CapturePreset {
   name: string;
   isDefault: boolean;
   captureMode: "capture" | "live" | "deep";
-  autoAnalyse: boolean;
-  autoAnalyseIntervalMinutes: number;
   chunkSizeSeconds: 3 | 5 | 10 | 15;
   confidenceFloor: number;
   audioSource: "microphone" | "loopback" | "both";
@@ -260,8 +256,6 @@ export const DEFAULT_SETTINGS: FidesSettings = {
   audioSource: "loopback",
   noiseThreshold: 0.1,
   transcriptionLanguage: "auto",
-  autoAnalyse: false,
-  autoAnalyseIntervalMinutes: 5,
   contextWindowMinutes: 2,
   confidenceFloor: 0.4,
   enabledCategories: [
@@ -291,8 +285,6 @@ export const DEFAULT_SETTINGS: FidesSettings = {
       name: "Interview",
       isDefault: true,
       captureMode: "deep",
-      autoAnalyse: true,
-      autoAnalyseIntervalMinutes: 2,
       chunkSizeSeconds: 5,
       confidenceFloor: 0.4,
       audioSource: "both",
@@ -303,8 +295,6 @@ export const DEFAULT_SETTINGS: FidesSettings = {
       name: "Meeting",
       isDefault: true,
       captureMode: "live",
-      autoAnalyse: false,
-      autoAnalyseIntervalMinutes: 5,
       chunkSizeSeconds: 5,
       confidenceFloor: 0.5,
       audioSource: "loopback",
@@ -315,8 +305,6 @@ export const DEFAULT_SETTINGS: FidesSettings = {
       name: "Lecture",
       isDefault: true,
       captureMode: "capture",
-      autoAnalyse: false,
-      autoAnalyseIntervalMinutes: 5,
       chunkSizeSeconds: 10,
       confidenceFloor: 0.6,
       audioSource: "loopback",
@@ -327,8 +315,6 @@ export const DEFAULT_SETTINGS: FidesSettings = {
       name: "Quick Capture",
       isDefault: true,
       captureMode: "capture",
-      autoAnalyse: false,
-      autoAnalyseIntervalMinutes: 5,
       chunkSizeSeconds: 3,
       confidenceFloor: 0.4,
       audioSource: "loopback",
