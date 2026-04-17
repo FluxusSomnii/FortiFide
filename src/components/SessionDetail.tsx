@@ -520,7 +520,7 @@ export function SessionDetail({ sessionId, onBack, onNavigateToPattern }: { sess
                 onMouseLeave={(e) => (e.currentTarget.style.textDecoration = showOriginal ? "underline" : "none")}
                 style={{
                   background: "none", border: "none", cursor: "pointer", padding: 0, marginLeft: 28, marginTop: 2,
-                  fontSize: 9, color: showOriginal ? "#8888cc" : "#666", textDecoration: showOriginal ? "underline" : "none",
+                  fontSize: 9, color: showOriginal ? "#8888cc" : "#999", textDecoration: showOriginal ? "underline" : "none",
                 }}
               >
                 {showOriginal ? "hide original" : "show original"}
@@ -705,7 +705,7 @@ export function SessionDetail({ sessionId, onBack, onNavigateToPattern }: { sess
           {!retranscribePreview && (
             <button onClick={handleReprocess} disabled={reprocessing || (reprocessMode !== "patterns" && !hasAnyAudio)} style={{
               background: "#181828", border: "1px solid #303050", borderRadius: 5,
-              color: reprocessing ? "#666" : "#8888cc", fontSize: 10, padding: "5px 14px",
+              color: reprocessing ? "#999" : "#8888cc", fontSize: 10, padding: "5px 14px",
               cursor: reprocessing ? "wait" : "pointer", fontFamily: "inherit", opacity: reprocessing ? 0.6 : 1,
             }}>{reprocessing ? "Running..." : "Run"}</button>
           )}
