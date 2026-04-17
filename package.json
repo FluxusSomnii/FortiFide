@@ -30,7 +30,11 @@
     "sidecar": "npx tsx sidecar/rhetorical-server.ts",
     "diarize": "node sidecar/start_diarize.cjs",
     "build:sidecar": "node sidecar/build-sidecar.mjs",
-    "tauri:dev": "concurrently -k -n vite,sidecar,diarize,tauri -c green,blue,cyan,yellow \"vite --port 5174 --strictPort\" \"npx tsx sidecar/rhetorical-server.ts\" \"node sidecar/start_diarize.cjs\" \"npx tauri dev\"",
-    "tauri:build": "pnpm build:sidecar && npx tauri build"
+    "tauri:dev": "concurrently -n vite,sidecar,diarize,tauri -c green,blue,cyan,yellow \"vite --port 5174 --strictPort\" \"npx tsx sidecar/rhetorical-server.ts\" \"node sidecar/start_diarize.cjs\" \"npx tauri dev\"",
+    "build:gpu": "node scripts/set-cargo-variant.mjs gpu && pnpm build:sidecar && npx tauri build && node scripts/rename-installer.mjs gpu",
+    "build:cpu": "node scripts/set-cargo-variant.mjs cpu && pnpm build:sidecar && npx tauri build && node scripts/rename-installer.mjs cpu",
+    "build:smart": "node scripts/build-smart-installer.mjs",
+    "build:all": "pnpm build:gpu && pnpm build:cpu && pnpm build:smart",
+    "tauri:build": "pnpm build:gpu"
   }
 }

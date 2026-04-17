@@ -38,6 +38,11 @@
   "bundle": {
     "active": true,
     "targets": ["nsis"],
-    "externalBin": ["binaries/fortifide-sidecar"]
+    "externalBin": ["binaries/fortifide-sidecar"],
+    "windows": {
+      "nsis": {
+        "installerHooks": "../scripts/nsis-hooks.nsh"
+      }
+    }
   }
 }
