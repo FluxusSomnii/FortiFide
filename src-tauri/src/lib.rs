@@ -11,6 +11,7 @@ mod audio;
 mod bridge;
 mod capture;
 mod diagnostics;
+mod setup;
 mod tray;
 
 /// Result of probing the host for a Python that can run the diarization
@@ -433,6 +434,12 @@ fn list_audio_input_devices() -> Vec<String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // Guided Setup CLI flag (spec §22.7). If `--check-setup` is on the
+    // command line, print the SetupState JSON and exit before we touch any
+    // Tauri plumbing — useful for scripted smoke tests and for debugging
+    // dependency problems without launching the full UI.
+    setup::maybe_run_cli_check();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .manage(SidecarState {
@@ -462,6 +469,15 @@ pub fn run() {
             get_cuda_status,
             check_crash_recovery,
             save_diagnostic_report,
+            setup::get_setup_state,
+            // Fully-qualified paths here because #[tauri::command] generates
+            // hidden __cmd__* siblings that a function-level `pub use` in
+            // setup/mod.rs does not capture — generate_handler! needs both
+            // the fn and its __cmd__ helper to be reachable from the same
+            // path. See the note in setup/mod.rs for the full story.
+            setup::install::install_pyannote,
+            setup::install::cancel_pyannote_install,
+            setup::install::get_pyannote_install_command,
         ])
         .setup(|app| {
             // ── Diagnostics bootstrap ──

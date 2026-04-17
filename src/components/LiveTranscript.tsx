@@ -4,6 +4,8 @@ import { useSessionStore, type CapturedSegment, type ModelDownloadProgress } fro
 import { api, type CapturePreset } from "../bridge";
 import type { DetectionInstance } from "@fides/pattern-library";
 import { AnnotationMark } from "./AnnotationMark";
+import type { SetupState } from "./setup/setupTypes";
+import { isModeAvailable } from "../lib/modeAvailability";
 
 // ─── Pattern annotation helpers ───
 
@@ -462,11 +464,24 @@ function ModeSelector({
   onChange,
   onTipEnter,
   onTipLeave,
+  setupState,
+  onOpenSetupWizard,
 }: {
   selected: CaptureMode;
   onChange: (m: CaptureMode) => void;
   onTipEnter: (e: React.MouseEvent, text: string) => void;
   onTipLeave: () => void;
+  /** Engine state for gating (spec §22.5 Prompt 2b.1). Null during first
+   *  paint — treated as "all modes available" to avoid a flash. */
+  setupState?: SetupState | null | undefined;
+  /** Open Guided Setup wizard at a specific step for deep-linking.
+   *
+   *  `| undefined` is written explicitly because the outer `LiveTranscript`
+   *  passes this through as a destructured optional prop, which under
+   *  `exactOptionalPropertyTypes: true` has type `T | undefined` rather
+   *  than "absent property". Matching that shape here is what keeps the
+   *  JSX call-site in LiveTranscript compiling. */
+  onOpenSetupWizard?: ((step?: number) => void) | undefined;
 }) {
   const options: Array<{ key: CaptureMode; label: string; tip: string }> = [
     { key: "deep", label: "Deep", tip: "Transcription + AI speaker attribution. Most accurate, ~60s chunks." },
@@ -476,25 +491,43 @@ function ModeSelector({
 
   return (
     <div style={{ display: "flex", gap: 0, borderRadius: 4, overflow: "hidden" }}>
-      {options.map((opt) => (
-        <button
-          key={opt.key}
-          onClick={() => onChange(opt.key)}
-          onMouseEnter={(e) => onTipEnter(e, opt.tip)}
-          onMouseLeave={onTipLeave}
-          style={{
-            background: selected === opt.key ? "#2a2a2a" : "transparent",
-            border: "1px solid #2a2a2a",
-            borderRight: "none",
-            color: selected === opt.key ? "#d0d0d0" : "#666",
-            fontSize: 11,
-            padding: "4px 10px",
-            cursor: "pointer",
-          }}
-        >
-          {opt.label}
-        </button>
-      ))}
+      {options.map((opt) => {
+        const availability = isModeAvailable(opt.key, setupState ?? null);
+        const disabled = !availability.available;
+        const tipText = disabled && availability.reason
+          ? `${availability.reason} \u2192`
+          : opt.tip;
+        return (
+          <button
+            key={opt.key}
+            onClick={() => {
+              if (disabled) {
+                // Click on a disabled pill deep-links into the wizard at
+                // the blocking step instead of switching mode. We never
+                // set HTML `disabled` — that would suppress click events
+                // entirely and prevent the deep-link.
+                onOpenSetupWizard?.(availability.blockingStep ?? undefined);
+                return;
+              }
+              onChange(opt.key);
+            }}
+            onMouseEnter={(e) => onTipEnter(e, tipText)}
+            onMouseLeave={onTipLeave}
+            style={{
+              background: selected === opt.key ? "#2a2a2a" : "transparent",
+              border: "1px solid #2a2a2a",
+              borderRight: "none",
+              color: selected === opt.key ? "#d0d0d0" : "#666",
+              fontSize: 11,
+              padding: "4px 10px",
+              cursor: disabled ? "help" : "pointer",
+              opacity: disabled ? 0.5 : 1,
+            }}
+          >
+            {opt.label}
+          </button>
+        );
+      })}
       <div style={{ borderRight: "1px solid #2a2a2a" }} />
     </div>
   );
@@ -547,7 +580,14 @@ function SourceToggle({
 
 // ─── Main component ───
 
-export function LiveTranscript() {
+interface LiveTranscriptProps {
+  /** SetupState for mode gating; null during first paint (spec §22.5 2b.1). */
+  setupState?: SetupState | null;
+  /** Deep-link the Guided Setup wizard at an optional step. */
+  onOpenSetupWizard?: (step?: number) => void;
+}
+
+export function LiveTranscript({ setupState, onOpenSetupWizard }: LiveTranscriptProps = {}) {
   const segments = useSessionStore((s) => s.capturedText);
   const detections = useSessionStore((s) => s.detections);
   const captureStatus = useSessionStore((s) => s.captureStatus);
@@ -954,7 +994,14 @@ export function LiveTranscript() {
       {/* Toolbar Row 1: Mode, Source, Start/Stop, Status */}
       <div style={{ padding: "4px 24px", flexShrink: 0, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <ModeSelector selected={captureMode} onChange={handleModeChange} onTipEnter={showTip} onTipLeave={hideTip} />
+          <ModeSelector
+            selected={captureMode}
+            onChange={handleModeChange}
+            onTipEnter={showTip}
+            onTipLeave={hideTip}
+            setupState={setupState ?? null}
+            onOpenSetupWizard={onOpenSetupWizard}
+          />
           <SourceToggle selected={audioSource} onChange={handleSourceChange} onTipEnter={showTip} onTipLeave={hideTip} />
           {modelReady && (
             <button

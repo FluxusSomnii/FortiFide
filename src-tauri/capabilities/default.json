@@ -10,6 +10,7 @@
     "core:event:allow-emit",
     "core:event:allow-unlisten",
     "shell:allow-spawn",
-    "shell:allow-kill"
+    "shell:allow-kill",
+    "shell:allow-open"
   ]
 }

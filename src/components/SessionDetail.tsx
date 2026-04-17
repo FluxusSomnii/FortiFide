@@ -3,6 +3,21 @@ import { api, type SavedSession, type CheckIn, SOURCE_TYPES, SOURCE_TYPE_LABELS 
 import { useSessionStore } from "../stores/session-store";
 import type { DetectionInstance } from "@fides/pattern-library";
 import { AnnotationMark } from "./AnnotationMark";
+import type { SetupState } from "./setup/setupTypes";
+import { isModeAvailable, type CaptureMode } from "../lib/modeAvailability";
+
+/**
+ * Retranscribe picker uses its own label vocabulary: "transcribe" /
+ * "speakers" / "deep" (as displayed). These are not the internal capture
+ * mode keys ("capture" / "live" / "deep"), so gating has to translate
+ * across vocabularies before calling isModeAvailable.
+ */
+type RetranscribeMode = "deep" | "speakers" | "transcribe";
+function retranscribeToCaptureMode(m: RetranscribeMode): CaptureMode {
+  if (m === "speakers") return "live";
+  if (m === "transcribe") return "capture";
+  return "deep";
+}
 
 function speakerColor(speaker: string): string {
   if (speaker === "Mic") return "#4a4a99";
@@ -85,7 +100,21 @@ function fmtTime(s: number): string {
 
 // ─── Main component ───
 
-export function SessionDetail({ sessionId, onBack, onNavigateToPattern }: { sessionId: string; onBack: () => void; onNavigateToPattern?: ((patternId: string) => void) | undefined }) {
+export function SessionDetail({
+  sessionId,
+  onBack,
+  onNavigateToPattern,
+  setupState,
+  onOpenSetupWizard,
+}: {
+  sessionId: string;
+  onBack: () => void;
+  onNavigateToPattern?: ((patternId: string) => void) | undefined;
+  /** Guided Setup state for gating retranscribe modes (spec §22.5 2b.1). */
+  setupState?: SetupState | null;
+  /** Open the Guided Setup wizard, optionally at a specific step (1..=7). */
+  onOpenSetupWizard?: (step?: number) => void;
+}) {
   const [session, setSession] = useState<SavedSession | null>(null);
   // Re-analyse is blocked while any recording is active — even if the user is
   // viewing an unrelated past session — because analyzeLive mutates the shared
@@ -316,8 +345,27 @@ export function SessionDetail({ sessionId, onBack, onNavigateToPattern }: { sess
   const [reprocessError, setReprocessError] = useState<string | null>(null);
 
   // Retranscribe sub-options (only relevant when mode !== "patterns")
-  const [retranscribeMode, setRetranscribeMode] = useState<"deep" | "speakers" | "transcribe">("speakers");
+  const [retranscribeMode, setRetranscribeMode] = useState<RetranscribeMode>("speakers");
   const [cleanupWithAI, setCleanupWithAI] = useState(false);
+
+  // Spec §22.5 Prompt 2b.1 edge case: if the selected retranscribe mode
+  // becomes unavailable (e.g. the user pulled their HF token or
+  // uninstalled pyannote mid-session), auto-fall-back to "transcribe" if
+  // that mode is still available. If even "transcribe" is unavailable
+  // (can_use_transcribe = false), leave the selection alone — the Run
+  // button will error with a clear message rather than silently doing
+  // nothing. We do NOT open the wizard automatically here: the user
+  // hasn't asked for setup, only for a retranscribe.
+  useEffect(() => {
+    if (!setupState) return;
+    const current = isModeAvailable(retranscribeToCaptureMode(retranscribeMode), setupState);
+    if (current.available) return;
+    const transcribeOk = isModeAvailable("capture", setupState).available;
+    if (transcribeOk && retranscribeMode !== "transcribe") {
+      setRetranscribeMode("transcribe");
+      setCleanupWithAI(false);
+    }
+  }, [setupState, retranscribeMode]);
 
   // Diff preview (shown after retranscribe step completes, before applying)
   const [retranscribePreview, setRetranscribePreview] = useState<{
@@ -677,14 +725,49 @@ export function SessionDetail({ sessionId, onBack, onNavigateToPattern }: { sess
               ) : (
                 <>
                   <div style={{ display: "flex", gap: 4, marginBottom: 10 }}>
-                    {(["deep", "speakers", "transcribe"] as const).map((m) => (
-                      <button key={m} onClick={() => { setRetranscribeMode(m); setCleanupWithAI(m === "deep"); }} style={{
-                        background: retranscribeMode === m ? "#191920" : "transparent",
-                        border: retranscribeMode === m ? "1px solid #303050" : "1px solid #1a1a1e",
-                        borderRadius: 4, color: retranscribeMode === m ? "#aaa" : "#444",
-                        fontSize: 10, padding: "4px 12px", cursor: "pointer", fontFamily: "inherit", textTransform: "uppercase",
-                      }}>{m === "speakers" ? "SPEAKERS" : m === "transcribe" ? "TRANSCRIBE" : "DEEP"}</button>
-                    ))}
+                    {(["deep", "speakers", "transcribe"] as const).map((m) => {
+                      // Bridge the retranscribe vocab → CaptureMode before gating.
+                      const availability = isModeAvailable(
+                        retranscribeToCaptureMode(m),
+                        setupState ?? null,
+                      );
+                      const disabled = !availability.available;
+                      const title = disabled
+                        ? `${availability.reason} \u2192`
+                        : m === "deep"
+                          ? "Transcription + AI speaker attribution."
+                          : m === "speakers"
+                            ? "Transcription + audio-based speaker detection."
+                            : "Transcription only.";
+                      return (
+                        <button
+                          key={m}
+                          title={title}
+                          onClick={() => {
+                            if (disabled) {
+                              onOpenSetupWizard?.(availability.blockingStep ?? undefined);
+                              return;
+                            }
+                            setRetranscribeMode(m);
+                            setCleanupWithAI(m === "deep");
+                          }}
+                          style={{
+                            background: retranscribeMode === m ? "#191920" : "transparent",
+                            border: retranscribeMode === m ? "1px solid #303050" : "1px solid #1a1a1e",
+                            borderRadius: 4,
+                            color: retranscribeMode === m ? "#aaa" : "#444",
+                            fontSize: 10,
+                            padding: "4px 12px",
+                            cursor: disabled ? "help" : "pointer",
+                            opacity: disabled ? 0.5 : 1,
+                            fontFamily: "inherit",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          {m === "speakers" ? "SPEAKERS" : m === "transcribe" ? "TRANSCRIBE" : "DEEP"}
+                        </button>
+                      );
+                    })}
                   </div>
                   {retranscribeMode === "deep" && (
                     <label style={{ display: "flex", alignItems: "center", gap: 6, marginBottom: 10, cursor: "pointer" }}>

@@ -5,6 +5,8 @@ import { useDisplayStore } from "../stores/display-store";
 import { api } from "../bridge";
 import type { FidesSettings, CapturePreset } from "../bridge";
 import type { PatternCategory } from "@fides/pattern-library";
+import type { SetupState } from "./setup/setupTypes";
+import { SetupStatusRow } from "./setup/SetupStatusRow";
 
 // ─── Constants ───
 
@@ -470,7 +472,21 @@ function SavePresetForm({
   );
 }
 
-export function SettingsTab() {
+interface SettingsTabProps {
+  /**
+   * Current Guided Setup state (spec §22.5 Prompt 2b.1). `null` before the
+   * engine has returned; the status row renders a muted "Checking…" until
+   * it lands.
+   */
+  setupState?: SetupState | null;
+  /**
+   * Opens the Guided Setup wizard. An optional step number deep-links;
+   * omitted (undefined) falls back to the engine's blocking_step.
+   */
+  onOpenSetupWizard?: (step?: number) => void;
+}
+
+export function SettingsTab({ setupState, onOpenSetupWizard }: SettingsTabProps = {}) {
   const settings = useSessionStore((s) => s.settings);
   const settingsLoaded = useSessionStore((s) => s.settingsLoaded);
   const updateSetting = useSessionStore((s) => s.updateSetting);
@@ -924,6 +940,17 @@ export function SettingsTab() {
         </div>
 
         {/* ─── Diarization ─── */}
+
+        {/* Guided Setup status row (spec §22.5 Prompt 2b.1). Collapsed
+            summary + expandable per-check list + Re-run setup button. Sits
+            just above the HuggingFace token field because both concerns
+            live in the same mental section (speaker-detection dependencies). */}
+        {onOpenSetupWizard && (
+          <SetupStatusRow
+            state={setupState ?? null}
+            onOpenSetupWizard={onOpenSetupWizard}
+          />
+        )}
 
         {/* HuggingFace Token */}
         <div style={fieldStyle}>

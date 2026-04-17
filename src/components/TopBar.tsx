@@ -2,8 +2,9 @@ import { useCallback, useState, useRef, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useSessionStore } from "../stores/session-store";
 import { PythonVersionModal, type PythonStatus } from "./PythonVersionModal";
+import type { SetupState } from "./setup/setupTypes";
+import { isModeAvailable, type CaptureMode } from "../lib/modeAvailability";
 
-type CaptureMode = "capture" | "live" | "deep";
 type AudioSource = "microphone" | "loopback" | "both";
 
 const MODE_OPTIONS: Array<{ key: CaptureMode; label: string; tip: string }> = [
@@ -18,6 +19,22 @@ const SOURCE_OPTIONS: Array<{ key: AudioSource; label: string; tip: string }> = 
   { key: "both", label: "BOTH", tip: "Capture both speakers and microphone simultaneously." },
 ];
 
+/**
+ * Option shape for PillGroup. `disabled` + `disabledTip` are optional so
+ * non-mode pills (sources) stay simple. Per §22.5 Prompt 2b.1: disabled
+ * pills remain visible at reduced opacity and still receive clicks — the
+ * onChange handler uses the disabled state to route the click (wizard
+ * deep-link instead of mode switch). We deliberately do NOT set the HTML
+ * `disabled` attribute, which would suppress the click event entirely.
+ */
+interface PillOption<T extends string> {
+  key: T;
+  label: string;
+  tip?: string;
+  disabled?: boolean;
+  disabledTip?: string;
+}
+
 function PillGroup<T extends string>({
   options,
   selected,
@@ -25,7 +42,7 @@ function PillGroup<T extends string>({
   onTipEnter,
   onTipLeave,
 }: {
-  options: Array<{ key: T; label: string; tip?: string }>;
+  options: Array<PillOption<T>>;
   selected: T;
   onChange: (key: T) => void;
   onTipEnter?: (e: React.MouseEvent, text: string) => void;
@@ -35,18 +52,24 @@ function PillGroup<T extends string>({
     <div style={{
       display: "flex", background: "#0f0f12", padding: 3, borderRadius: 7, border: "1px solid #1a1a1e",
     }}>
-      {options.map((opt) => (
-        <button key={opt.key} onClick={() => onChange(opt.key)}
-          onMouseEnter={(e) => opt.tip && onTipEnter?.(e, opt.tip)}
-          onMouseLeave={() => onTipLeave?.()}
-          style={{
-            padding: "5px 12px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em",
-            background: selected === opt.key ? "#1c1c26" : "transparent",
-            border: selected === opt.key ? "1px solid #28283a" : "1px solid transparent",
-            borderRadius: 5, color: selected === opt.key ? "#ccc" : "#777", cursor: "pointer",
-            fontFamily: "inherit",
-          }}>{opt.label}</button>
-      ))}
+      {options.map((opt) => {
+        const disabled = opt.disabled === true;
+        const tipText = disabled && opt.disabledTip ? opt.disabledTip : opt.tip;
+        return (
+          <button key={opt.key} onClick={() => onChange(opt.key)}
+            onMouseEnter={(e) => tipText && onTipEnter?.(e, tipText)}
+            onMouseLeave={() => onTipLeave?.()}
+            style={{
+              padding: "5px 12px", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em",
+              background: selected === opt.key ? "#1c1c26" : "transparent",
+              border: selected === opt.key ? "1px solid #28283a" : "1px solid transparent",
+              borderRadius: 5, color: selected === opt.key ? "#ccc" : "#777",
+              opacity: disabled ? 0.5 : 1,
+              cursor: disabled ? "help" : "pointer",
+              fontFamily: "inherit",
+            }}>{opt.label}</button>
+        );
+      })}
     </div>
   );
 }
@@ -68,7 +91,20 @@ export async function startCapture() {
   }
 }
 
-export function TopBar({ sidebarOpen, onExpandSidebar }: { sidebarOpen: boolean; onExpandSidebar: () => void }) {
+interface TopBarProps {
+  sidebarOpen: boolean;
+  onExpandSidebar: () => void;
+  /**
+   * Current setup state from the Rust engine. `null` during first paint —
+   * isModeAvailable treats null as "all modes available" so we don't flash
+   * disabled pills on every launch. See src/lib/modeAvailability.ts.
+   */
+  setupState?: SetupState | null;
+  /** Open the Guided Setup wizard, optionally at a specific step (1..=7). */
+  onOpenSetupWizard?: (step?: number) => void;
+}
+
+export function TopBar({ sidebarOpen, onExpandSidebar, setupState, onOpenSetupWizard }: TopBarProps) {
   const isCapturing = useSessionStore((s) => s.isAudioCapturing);
   const captureMode = useSessionStore((s) => s.captureMode);
   const settings = useSessionStore((s) => s.settings);
@@ -133,9 +169,19 @@ export function TopBar({ sidebarOpen, onExpandSidebar }: { sidebarOpen: boolean;
 
   const handleModeChange = useCallback(async (mode: CaptureMode) => {
     const store = useSessionStore.getState();
-    // Gate: Speakers/Deep require Python 3.11. If the probe came back with
-    // anything other than "ok" (or isn't back yet and the user is fast), block
-    // the switch and surface the modal. The mode pill stays on the old value.
+    // Gate 1: Guided Setup state. If the chosen mode's dependencies aren't
+    // all green per SetupState, open the wizard at the blocking step
+    // instead of switching. The pill click acts as a deep-link.
+    const availability = isModeAvailable(mode, setupState ?? null);
+    if (!availability.available) {
+      onOpenSetupWizard?.(availability.blockingStep ?? undefined);
+      return;
+    }
+    // Gate 2 (legacy): Python-version probe. The setup engine already
+    // covers Python 3.11 presence, so this should be redundant, but we
+    // keep it as a belt-and-braces fallback in case the two probes drift
+    // (e.g. user uninstalls Python 3.11 mid-session without re-running
+    // the wizard). If fired, it surfaces the existing PythonVersionModal.
     if ((mode === "live" || mode === "deep") && pythonStatus && pythonStatus.status !== "ok") {
       setPythonModal(pythonStatus);
       return;
@@ -154,7 +200,7 @@ export function TopBar({ sidebarOpen, onExpandSidebar }: { sidebarOpen: boolean;
         store.setAudioError(err instanceof Error ? err.message : String(err));
       }
     }
-  }, [pythonStatus]);
+  }, [pythonStatus, setupState, onOpenSetupWizard]);
 
   const handleSourceChange = useCallback(async (source: AudioSource) => {
     const store = useSessionStore.getState();
@@ -215,8 +261,25 @@ export function TopBar({ sidebarOpen, onExpandSidebar }: { sidebarOpen: boolean;
           color: isCapturing ? "#e85d4a" : "#4ade80",
         }}>{isCapturing ? "■ Stop" : "▶ Start"}</button>
 
-      {/* Mode */}
-      <PillGroup options={MODE_OPTIONS} selected={captureMode} onChange={handleModeChange} onTipEnter={showTip} onTipLeave={hideTip} />
+      {/* Mode — each pill is individually gated on setupState. Disabled
+          pills stay visible at 0.5 opacity with `cursor: help`; clicking
+          one opens the wizard at the blocking step (§22.5 Prompt 2b.1). */}
+      <PillGroup
+        options={MODE_OPTIONS.map((o) => {
+          const availability = isModeAvailable(o.key, setupState ?? null);
+          return availability.available
+            ? o
+            : {
+                ...o,
+                disabled: true,
+                disabledTip: `${availability.reason} \u2192`,
+              };
+        })}
+        selected={captureMode}
+        onChange={handleModeChange}
+        onTipEnter={showTip}
+        onTipLeave={hideTip}
+      />
 
       {/* Preset */}
       <select

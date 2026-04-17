@@ -1,6 +1,6 @@
 [package]
 name = "fortifide"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
 
 [lib]
@@ -8,11 +8,21 @@ name = "fortifide_lib"
 crate-type = ["lib", "cdylib", "staticlib"]
 
 [features]
-# GPU build. Gated via `scripts/set-cargo-variant.mjs`. The default build
-# is the GPU variant; the CPU build is produced by flipping this feature
-# off so whisper-rs pulls its CPU-only backend.
-default = []
+# Default build variant is GPU. Section 22.2: GPU is the recommended
+# instrument; 95% of dev work and most end-user installs target it.
+# The `cpu` feature is a pure marker — it activates no dependencies, only
+# serving as an opt-in label for the CPU variant. The actual CPU/GPU split
+# is driven by whether `whisper-rs/cuda` is pulled (via the `gpu` feature).
+# `gpu` and `cpu` are not mutually exclusive at the Cargo level (cpu adds
+# nothing), so `cargo build --features cpu` alone is harmless: gpu still
+# activates via the default, and whisper-rs still uses its CUDA backend.
+# For a true CPU build, use `--no-default-features --features cpu` (or
+# just `--no-default-features`, which is equivalent). The switcher script
+# `scripts/set-cargo-variant.mjs` does this by flipping the `default`
+# list itself so individual `cargo build` invocations don't need the flag.
+default = ["gpu"]
 gpu = ["whisper-rs/cuda"]
+cpu = []
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -22,7 +32,7 @@ tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["sync", "time", "macros"] }
+tokio = { version = "1", features = ["sync", "time", "macros", "process", "io-util", "rt"] }
 uuid = { version = "1", features = ["v4"] }
 reqwest = { version = "0.12", features = ["json", "blocking"] }
 whisper-rs = "0.16"
@@ -37,6 +47,9 @@ windows = { version = "0.61", features = [
   "Win32_UI_WindowsAndMessaging",
   "Win32_Media_Audio",
   "Win32_Devices_FunctionDiscovery",
+  # Guided Setup CUDA check (setup/checks/cuda.rs) uses LoadLibraryExW to
+  # confirm the CUDA 12 runtime DLLs actually load, independent of PATH.
+  "Win32_System_LibraryLoader",
 ] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
