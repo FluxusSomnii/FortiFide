@@ -168,6 +168,11 @@ impl Transcriber {
         }
 
         println!("[WHISPER] Loading model from {model_path}");
+
+        // No silent CPU fallback. The GPU build uses GPU or crashes
+        // explicitly — silent degradation to CPU hides real bugs behind
+        // 20× worse performance. Users who need CPU should install the
+        // CPU variant via the smart installer.
         let params = WhisperContextParameters::default();
         let ctx = WhisperContext::new_with_params(model_path, params)
             .map_err(|e| format!("Failed to load Whisper model: {e:?}"))?;

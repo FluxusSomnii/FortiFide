@@ -421,7 +421,10 @@ export function OnboardingModal({ onComplete }: Props) {
             <h2 style={titleStyle}>Speaker identification (optional)</h2>
             <p style={{ ...bodyStyle, marginBottom: 14 }}>
               Live and Deep modes identify who is speaking using the pyannote model.
-              This requires a free Hugging Face account and accepting the model licence.
+              This requires Python 3.11 to be installed on your machine.
+              Python 3.12 and newer are not yet supported.
+              It also requires a free Hugging Face account and accepting the
+              model licence.
             </p>
             <ol style={{ ...bodyStyle, paddingLeft: 20, marginBottom: 14 }}>
               <li style={{ marginBottom: 6 }}>
@@ -455,9 +458,19 @@ export function OnboardingModal({ onComplete }: Props) {
                 Get your token at huggingface.co/settings/tokens
               </a>
             </div>
+            <div style={{ marginTop: 4 }}>
+              <a
+                href="https://www.python.org/downloads/release/python-3119/"
+                target="_blank"
+                rel="noreferrer"
+                style={{ ...smallStyle, ...linkStyle }}
+              >
+                Python 3.11 — python.org/downloads/release/python-3119
+              </a>
+            </div>
             <p style={{ ...smallStyle, marginTop: 10, marginBottom: 22 }}>
               Without this, Capture mode works fully. Live and Deep modes will be
-              available once you add your token.
+              available once you add your token and Python 3.11.
             </p>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
               <Button variant="secondary" onClick={goBack}>← Back</Button>

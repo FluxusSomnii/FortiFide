@@ -11,6 +11,8 @@ import { DataTab } from "./components/DataTab";
 import { InsightsTab } from "./components/InsightsTab";
 import { SessionRitualCard } from "./components/SessionRitualCard";
 import { OnboardingModal } from "./components/OnboardingModal";
+import { CpuModeBanner } from "./components/CpuModeBanner";
+import { CrashRecoveryDialog } from "./components/CrashRecoveryDialog";
 import { useSessionStore, initSessionListeners, type RitualData } from "./stores/session-store";
 import "./App.css";
 
@@ -140,6 +142,8 @@ export function App() {
 
         {/* Main panel */}
         <div style={{ flex: 1, display: "flex", flexDirection: "column", overflow: "hidden" }}>
+          {/* CPU-mode notice — dismissible, auto-hidden once acknowledged */}
+          <CpuModeBanner />
           {/* Top bar — always visible */}
           <TopBar sidebarOpen={sidebarOpen} onExpandSidebar={() => setSidebarOpen(true)} />
 
@@ -166,6 +170,9 @@ export function App() {
       {showOnboarding && (
         <OnboardingModal onComplete={handleOnboardingComplete} />
       )}
+
+      {/* Crash recovery — highest z-index, overlays everything. Self-dismissing. */}
+      <CrashRecoveryDialog />
 
       {/* Ritual cards — fixed overlays, visible from any tab */}
       {showEntryCard && (
